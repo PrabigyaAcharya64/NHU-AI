@@ -1,0 +1,20 @@
+{
+  "name": "three-physics-collision",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^7.0.4"
+  },
+  "dependencies": {
+    "@dimforge/rapier2d": "^0.18.0-beta.0",
+    "@dimforge/rapier3d": "^0.18.0-beta.0",
+    "@dimforge/rapier3d-compat": "^0.18.0-beta.0",
+    "three": "^0.174.0"
+  }
+}
