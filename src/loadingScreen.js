@@ -121,7 +121,7 @@ class LoadingScreen {
 
     // Create logo
     const logo = document.createElement('img');
-    logo.src = '/Asset 4@4x-8.png';
+    logo.src = './Asset 4@4x-8.png';
     logo.alt = 'Captures Logo';
     logo.style.cssText = `
       width: 80px;

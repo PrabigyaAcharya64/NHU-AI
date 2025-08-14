@@ -8,7 +8,11 @@ import { PhysicsSystem } from './physicsSystem.js';
 
 // Global error handler to catch browser extension conflicts
 window.addEventListener('error', (event) => {
-  if (event.error && event.error.message && event.error.message.includes('Cannot redefine property')) {
+  if (event.error && event.error.message && (
+    event.error.message.includes('Cannot redefine property') ||
+    event.error.message.includes('__s@') ||
+    event.error.message.includes('content.js')
+  )) {
     console.warn('Browser extension conflict detected, continuing...');
     event.preventDefault();
     return false;

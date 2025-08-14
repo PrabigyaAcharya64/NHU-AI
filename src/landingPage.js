@@ -218,7 +218,7 @@ class LandingPage {
     
     // Create source element for the video
     const videoSource = document.createElement('source');
-    videoSource.src = '/Adobe Express - IQWPE3043 (1).mp4';
+    videoSource.src = './Adobe Express - IQWPE3043 (1).mp4';
     videoSource.type = 'video/mp4';
     
     // Add fallback text for browsers that don't support video
@@ -297,7 +297,7 @@ class LandingPage {
 
     // Top logo
     const topLogo = document.createElement('img');
-    topLogo.src = '/Asset 9@4x-8.png';
+    topLogo.src = './Asset 9@4x-8.png';
     topLogo.alt = 'Logo';
     topLogo.className = 'top-logo';
     topLogo.style.cssText = `
@@ -481,7 +481,7 @@ class LandingPage {
     `;
 
     const image1 = document.createElement('img');
-    image1.src = '/pic1.jpg';
+    image1.src = './pic1.jpg';
     image1.alt = 'Keshav Narayan Chowk';
     image1.style.cssText = `
       width: 100%;
@@ -492,7 +492,7 @@ class LandingPage {
     `;
 
     const image2 = document.createElement('img');
-    image2.src = '/pic2.webp';
+    image2.src = './pic2.webp';
     image2.alt = 'Patan Durbar Square';
     image2.style.cssText = `
       width: 100%;
