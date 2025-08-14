@@ -1,0 +1,11 @@
+# Large video files that might cause build issues
+public/Adobe Express - IQWPE3043 (1).mp4
+public/Untitled video - Made with Clipchamp (1).mp4.gif
+public/IMG_8462.GIF
+
+# Development files
+node_modules
+.git
+.gitignore
+README.md
+*.log

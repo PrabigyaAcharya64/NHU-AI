@@ -14,7 +14,6 @@
   "dependencies": {
     "@dimforge/rapier2d": "^0.18.0-beta.0",
     "@dimforge/rapier3d": "^0.18.0-beta.0",
-    "@dimforge/rapier3d-compat": "^0.18.0-beta.0",
-    "three": "^0.174.0"
+    "@dimforge/rapier3d-compat": "^0.18.0-beta.0"
   }
 }
