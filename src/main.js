@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import { SplatMesh } from "@sparkjsdev/spark";
-import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import LandingPage from './landingPage.js';
 import LoadingScreen from './loadingScreen.js';
 import { MobileControls } from './mobileControls.js';

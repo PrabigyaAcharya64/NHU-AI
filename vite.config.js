@@ -10,7 +10,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     rollupOptions: {
-      external: ['three', '@sparkjsdev/spark', 'three/examples/jsm/controls/TransformControls.js']
+      external: ['three', '@sparkjsdev/spark']
     },
     chunkSizeWarningLimit: 1500
   },
