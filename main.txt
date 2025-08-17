@@ -1,0 +1,3868 @@
+import * as THREE from "three";
+import { SplatMesh } from "@sparkjsdev/spark";
+import RAPIER from "@dimforge/rapier3d-compat";
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import LandingPage from './landingPage.js';
+import LoadingScreen from './loadingScreen.js';
+
+// Mobile Movement Joystick System
+class MobileJoystick {
+  constructor(container, options = {}) {
+    this.container = container;
+    this.options = {
+      size: options.size || 80,
+      color: options.color || '#ffffff',
+      backgroundColor: options.backgroundColor || 'rgba(255, 255, 255, 0.2)',
+      borderColor: options.borderColor || 'rgba(255, 255, 255, 0.3)',
+      ...options
+    };
+    
+    this.isActive = false;
+    this.centerX = 0;
+    this.centerY = 0;
+    this.currentX = 0;
+    this.currentY = 0;
+    this.maxDistance = this.options.size / 2 - 15;
+    
+    this.createElements();
+    this.bindEvents();
+  }
+  
+  createElements() {
+    // Container
+    this.element = document.createElement('div');
+    this.element.style.cssText = `
+      position: absolute;
+      width: ${this.options.size}px;
+      height: ${this.options.size}px;
+      border-radius: 50%;
+      background: ${this.options.backgroundColor};
+      border: 2px solid ${this.options.borderColor};
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+      user-select: none;
+      z-index: 1000;
+    `;
+    
+    // Joystick handle
+    this.handle = document.createElement('div');
+    this.handle.style.cssText = `
+      width: 45px;
+      height: 45px;
+      border-radius: 50%;
+      background: ${this.options.color};
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+      transition: transform 0.1s ease;
+    `;
+    
+    this.element.appendChild(this.handle);
+    this.container.appendChild(this.element);
+  }
+  
+  bindEvents() {
+    const events = ['touchstart', 'mousedown'];
+    const moveEvents = ['touchmove', 'mousemove'];
+    const endEvents = ['touchend', 'mouseup'];
+    
+    events.forEach(event => {
+      this.element.addEventListener(event, this.onStart.bind(this), { passive: false });
+    });
+    
+    moveEvents.forEach(event => {
+      document.addEventListener(event, this.onMove.bind(this), { passive: false });
+    });
+    
+    endEvents.forEach(event => {
+      document.addEventListener(event, this.onEnd.bind(this), { passive: false });
+    });
+  }
+  
+  onStart(e) {
+    e.preventDefault();
+    this.isActive = true;
+    const rect = this.element.getBoundingClientRect();
+    this.centerX = rect.left + rect.width / 2;
+    this.centerY = rect.top + rect.height / 2;
+    this.updatePosition(e);
+  }
+  
+  onMove(e) {
+    if (!this.isActive) return;
+    e.preventDefault();
+    this.updatePosition(e);
+  }
+  
+  onEnd(e) {
+    if (!this.isActive) return;
+    e.preventDefault();
+    this.isActive = false;
+    this.resetPosition();
+  }
+  
+  updatePosition(e) {
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    const deltaX = clientX - this.centerX;
+    const deltaY = clientY - this.centerY;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    
+    if (distance > this.maxDistance) {
+      const angle = Math.atan2(deltaY, deltaX);
+      this.currentX = Math.cos(angle) * this.maxDistance;
+      this.currentY = Math.sin(angle) * this.maxDistance;
+    } else {
+      this.currentX = deltaX;
+      this.currentY = deltaY;
+    }
+    
+    this.handle.style.transform = `translate(${this.currentX}px, ${this.currentY}px)`;
+  }
+  
+  resetPosition() {
+    this.currentX = 0;
+    this.currentY = 0;
+    this.handle.style.transform = 'translate(0px, 0px)';
+  }
+  
+  getValues() {
+    if (!this.isActive) return { x: 0, y: 0 };
+    
+    const x = this.currentX / this.maxDistance;
+    const y = -this.currentY / this.maxDistance; // Invert Y for intuitive control
+    
+    // Add deadzone for more precise control
+    const deadzone = 0.1;
+    const magnitude = Math.sqrt(x * x + y * y);
+    
+    if (magnitude < deadzone) {
+      return { x: 0, y: 0 };
+    }
+    
+    // Apply smooth curve for better control
+    const normalizedMagnitude = (magnitude - deadzone) / (1 - deadzone);
+    const smoothMagnitude = normalizedMagnitude * normalizedMagnitude;
+    
+    return {
+      x: (x / magnitude) * smoothMagnitude,
+      y: (y / magnitude) * smoothMagnitude
+    };
+  }
+  
+  destroy() {
+    this.element.remove();
+  }
+}
+
+// Mobile Controls Manager
+class MobileControls {
+  constructor(renderer, camera, scene) {
+    this.renderer = renderer;
+    this.camera = camera;
+    this.scene = scene;
+    this.isMobile = this.detectMobile();
+    this.isLandscape = false;
+    this.joysticks = {};
+    this.orientationMessage = null;
+    this.cameraTouchActive = false;
+    this.lastTouchX = 0;
+    this.lastTouchY = 0;
+    this.controlsShown = false;
+    
+    if (this.isMobile) {
+      this.initialize();
+    }
+  }
+  
+  detectMobile() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           (window.innerWidth <= 768 && window.innerHeight <= 1024) ||
+           ('ontouchstart' in window) ||
+           (navigator.maxTouchPoints > 0);
+  }
+  
+  initialize() {
+    this.createOrientationMessage();
+    this.createJoysticks();
+    this.bindOrientationEvents();
+    this.checkOrientation();
+    this.startPeriodicOrientationCheck();
+  }
+  
+  createOrientationMessage() {
+    this.orientationMessage = document.createElement('div');
+    this.orientationMessage.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      color: white;
+      font-family: 'Poppins', sans-serif;
+      font-size: 18px;
+      text-align: center;
+      padding: 20px;
+      pointer-events: auto;
+    `;
+    this.orientationMessage.innerHTML = `
+      <div>
+        <div style="font-size: 48px; margin-bottom: 20px;">📱</div>
+        <div>Please rotate your device to landscape mode</div>
+        <div style="font-size: 14px; margin-top: 10px; opacity: 0.7;">For the best gaming experience</div>
+        <button id="continue-button" style="
+          margin-top: 20px;
+          padding: 10px 20px;
+          background: #429fb8;
+          color: white;
+          border: none;
+          border-radius: 5px;
+          font-family: 'Poppins', sans-serif;
+          font-size: 16px;
+          cursor: pointer;
+        ">Continue Anyway</button>
+      </div>
+    `;
+    
+    // Add click handler for continue button
+    this.orientationMessage.addEventListener('click', (e) => {
+      if (e.target.id === 'continue-button') {
+        console.log('Continue button clicked - forcing landscape mode');
+        this.isLandscape = true;
+        this.orientationMessage.style.display = 'none';
+        this.showJoysticks();
+        this.controlsShown = true;
+      }
+    });
+    
+    // Auto-hide after 5 seconds to prevent blocking
+    setTimeout(() => {
+      if (this.orientationMessage && this.orientationMessage.style.display !== 'none') {
+        console.log('Auto-hiding orientation message after 5 seconds');
+        this.orientationMessage.style.display = 'none';
+        this.isLandscape = true;
+        this.showJoysticks();
+        this.controlsShown = true;
+      }
+    }, 5000);
+    
+    document.body.appendChild(this.orientationMessage);
+  }
+  
+  createJoysticks() {
+    // Movement joystick (left side only) - Bigger size for better mobile control
+    this.joysticks.movement = new MobileJoystick(document.body, {
+      size: 120,
+      color: '#4CAF50',
+      backgroundColor: 'rgba(76, 175, 80, 0.3)',
+      borderColor: 'rgba(76, 175, 80, 0.6)'
+    });
+    
+    this.positionJoysticks();
+    this.setupTouchCamera();
+  }
+  
+  setupTouchCamera() {
+    // Add touch camera controls to the canvas
+    const canvas = this.renderer.domElement;
+    
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        // Check if touching an interactive object first
+        const touch = e.touches[0];
+        const mouse = new THREE.Vector2();
+        mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+        
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, this.camera);
+        const intersects = raycaster.intersectObjects(this.scene.children, true);
+        
+        // Only start camera movement if not touching an interactive object
+        if (intersects.length === 0 || !this.isInteractiveObject(intersects[0].object)) {
+          this.cameraTouchActive = true;
+          this.lastTouchX = touch.clientX;
+          this.lastTouchY = touch.clientY;
+        }
+      }
+    }, { passive: false });
+    
+    canvas.addEventListener('touchmove', (e) => {
+      if (this.cameraTouchActive && e.touches.length === 1) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - this.lastTouchX;
+        const deltaY = touch.clientY - this.lastTouchY;
+        
+        const sensitivity = sceneConfig.sceneSettings.mouseSensitivity * 2;
+        yaw -= deltaX * sensitivity;
+        pitch -= deltaY * sensitivity;
+        pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+        
+        this.lastTouchX = touch.clientX;
+        this.lastTouchY = touch.clientY;
+      }
+    }, { passive: false });
+    
+    canvas.addEventListener('touchend', (e) => {
+      this.cameraTouchActive = false;
+    }, { passive: false });
+  }
+  
+  isInteractiveObject(object) {
+    // Check if the object is interactive (clue cubes, etc.)
+    return object.userData && (
+      object.userData.isClueCube || 
+      object.userData.isNewCube || 
+      object.userData.isInteractive ||
+      object.name === 'helloCube' ||
+      object.name === 'newCube' ||
+      object.name === 'anotherCube2'
+    );
+  }
+  
+  positionJoysticks() {
+    const margin = 30;
+    
+    // Movement joystick (bottom left) - adjusted for bigger size
+    this.joysticks.movement.element.style.left = `${margin}px`;
+    this.joysticks.movement.element.style.bottom = `${margin}px`;
+    
+    // Add labels and buttons
+    this.addJoystickLabels();
+    this.createActionButtons();
+    this.createFullscreenButton();
+  }
+  
+  addJoystickLabels() {
+    // Movement label
+    const movementLabel = document.createElement('div');
+    movementLabel.textContent = 'MOVE';
+    movementLabel.style.cssText = `
+      position: absolute;
+      left: 30px;
+      bottom: 160px;
+      color: #4CAF50;
+      font-family: 'Poppins', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      z-index: 1000;
+    `;
+    document.body.appendChild(movementLabel);
+  }
+  
+  createActionButtons() {
+    // Jump button (bigger and more responsive)
+    this.jumpButton = document.createElement('div');
+    this.jumpButton.textContent = '↑';
+    this.jumpButton.style.cssText = `
+      position: absolute;
+      right: 20px;
+      bottom: 20px;
+      width: 65px;
+      height: 65px;
+      background: linear-gradient(135deg, #FF6B6B, #FF8E53);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-family: 'Poppins', sans-serif;
+      font-size: 24px;
+      font-weight: 600;
+      z-index: 1000;
+      touch-action: none;
+      user-select: none;
+      box-shadow: 0 4px 12px rgba(255, 107, 107, 0.5);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+    `;
+    
+    // Crouch button (bigger and more responsive)
+    this.crouchButton = document.createElement('div');
+    this.crouchButton.textContent = '↓';
+    this.crouchButton.style.cssText = `
+      position: absolute;
+      right: 100px;
+      bottom: 20px;
+      width: 65px;
+      height: 65px;
+      background: linear-gradient(135deg, #9C27B0, #673AB7);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-family: 'Poppins', sans-serif;
+      font-size: 24px;
+      font-weight: 600;
+      z-index: 1000;
+      touch-action: none;
+      user-select: none;
+      box-shadow: 0 4px 12px rgba(156, 39, 176, 0.5);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+    `;
+    
+    // Add touch events for jump button (more responsive)
+    this.jumpButton.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      this.jumpButton.style.transform = 'scale(0.9)';
+      this.jumpButton.style.boxShadow = '0 6px 16px rgba(255, 107, 107, 0.7)';
+      // Trigger jump
+      if (isGrounded && !isCrouching) {
+        const jumpForce = sceneConfig.sceneSettings.jumpForce;
+        playerBody.applyImpulse({ x: 0, y: jumpForce, z: 0 }, true);
+      }
+    }, { passive: false });
+    
+    this.jumpButton.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      this.jumpButton.style.transform = 'scale(1)';
+      this.jumpButton.style.boxShadow = '0 4px 12px rgba(255, 107, 107, 0.5)';
+    }, { passive: false });
+    
+    // Add touch events for crouch button (more responsive)
+    this.crouchButton.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      this.crouchButton.style.transform = 'scale(0.9)';
+      this.crouchButton.style.boxShadow = '0 6px 16px rgba(156, 39, 176, 0.7)';
+      // Toggle crouch
+      isCrouching = !isCrouching;
+      if (isCrouching) {
+        this.crouchButton.style.background = 'linear-gradient(135deg, #FF9800, #FF5722)';
+      } else {
+        this.crouchButton.style.background = 'linear-gradient(135deg, #9C27B0, #673AB7)';
+      }
+    }, { passive: false });
+    
+    this.crouchButton.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      this.crouchButton.style.transform = 'scale(1)';
+      this.crouchButton.style.boxShadow = '0 4px 12px rgba(156, 39, 176, 0.5)';
+    }, { passive: false });
+    
+    document.body.appendChild(this.jumpButton);
+    document.body.appendChild(this.crouchButton);
+  }
+  
+  createFullscreenButton() {
+    this.fullscreenButton = document.createElement('div');
+    this.fullscreenButton.textContent = '⛶';
+    this.fullscreenButton.style.cssText = `
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 40px;
+      height: 40px;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-family: 'Poppins', sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+      z-index: 1000;
+      touch-action: none;
+      user-select: none;
+      transition: transform 0.1s ease;
+    `;
+    
+    this.fullscreenButton.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      this.fullscreenButton.style.transform = 'scale(0.95)';
+      this.toggleFullscreen();
+    }, { passive: false });
+    
+    this.fullscreenButton.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      this.fullscreenButton.style.transform = 'scale(1)';
+    }, { passive: false });
+    
+    document.body.appendChild(this.fullscreenButton);
+  }
+  
+  toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.log('Error attempting to enable fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  }
+  
+
+  
+  bindOrientationEvents() {
+    window.addEventListener('orientationchange', () => {
+      setTimeout(() => this.checkOrientation(), 100);
+    });
+    
+    window.addEventListener('resize', () => {
+      this.checkOrientation();
+    });
+  }
+  
+  checkOrientation() {
+    const isLandscape = window.innerWidth > window.innerHeight;
+    
+    console.log('Orientation check:', { isLandscape, wasLandscape: this.isLandscape, windowWidth: window.innerWidth, windowHeight: window.innerHeight });
+    
+    if (isLandscape !== this.isLandscape) {
+      this.isLandscape = isLandscape;
+      
+      if (this.orientationMessage) {
+        this.orientationMessage.style.display = isLandscape ? 'none' : 'flex';
+        console.log('Orientation message display:', this.orientationMessage.style.display);
+      }
+      
+      if (isLandscape) {
+        this.showJoysticks();
+        this.controlsShown = true;
+        console.log('Joysticks shown');
+        // Force a small delay to ensure elements are properly displayed
+        setTimeout(() => {
+          this.showJoysticks();
+        }, 100);
+      } else {
+        this.hideJoysticks();
+        this.controlsShown = false;
+        console.log('Joysticks hidden');
+      }
+    }
+  }
+  
+  // Force check orientation on window load
+  forceOrientationCheck() {
+    setTimeout(() => {
+      this.checkOrientation();
+    }, 500);
+  }
+  
+  // Periodic orientation check to ensure controls are always visible
+  startPeriodicOrientationCheck() {
+    setInterval(() => {
+      if (this.isMobile) {
+        this.checkOrientation();
+      }
+    }, 1000); // Check every 1 second for more responsiveness
+  }
+  
+  showJoysticks() {
+    if (this.joysticks.movement) {
+      this.joysticks.movement.element.style.display = 'flex';
+      if (this.jumpButton) {
+        this.jumpButton.style.display = 'flex';
+      }
+      if (this.crouchButton) {
+        this.crouchButton.style.display = 'flex';
+      }
+      if (this.fullscreenButton) {
+        this.fullscreenButton.style.display = 'flex';
+      }
+    }
+  }
+  
+  hideJoysticks() {
+    if (this.joysticks.movement) {
+      this.joysticks.movement.element.style.display = 'none';
+      if (this.jumpButton) {
+        this.jumpButton.style.display = 'none';
+      }
+      if (this.crouchButton) {
+        this.crouchButton.style.display = 'none';
+      }
+      if (this.fullscreenButton) {
+        this.fullscreenButton.style.display = 'none';
+      }
+    }
+  }
+  
+  getMovementInput() {
+    if (!this.isMobile || !this.isLandscape || !this.joysticks.movement) {
+      return { x: 0, y: 0 };
+    }
+    return this.joysticks.movement.getValues();
+  }
+  
+
+  
+  destroy() {
+    if (this.orientationMessage) {
+      this.orientationMessage.remove();
+    }
+    if (this.jumpButton) {
+      this.jumpButton.remove();
+    }
+    if (this.crouchButton) {
+      this.crouchButton.remove();
+    }
+    if (this.fullscreenButton) {
+      this.fullscreenButton.remove();
+    }
+    if (this.joysticks.movement) {
+      this.joysticks.movement.destroy();
+    }
+  }
+}
+
+// Mobile controls will be initialized after Three.js scene setup
+let mobileControls = null;
+let interactionManager = null;
+let raycastManager = null;
+
+// Ensure mobile controls are properly initialized
+document.addEventListener('DOMContentLoaded', () => {
+  if (mobileControls && mobileControls.isMobile) {
+    console.log('DOMContentLoaded - Mobile detected, checking orientation');
+    mobileControls.checkOrientation();
+    // Force check again after a short delay
+    setTimeout(() => {
+      mobileControls.checkOrientation();
+    }, 500);
+  }
+  
+  // Fallback: Ensure game loads regardless of mobile controls
+  setTimeout(() => {
+    console.log('Fallback: Ensuring game is visible and running');
+    if (renderer && renderer.domElement) {
+      renderer.domElement.style.display = 'block';
+      renderer.domElement.style.visibility = 'visible';
+      renderer.domElement.style.zIndex = '1';
+    }
+  }, 1000);
+  
+  // Emergency override: Remove all blocking elements after 10 seconds
+  setTimeout(() => {
+    console.log('Emergency override: Removing all blocking elements');
+    const blockingElements = document.querySelectorAll('[style*="z-index: 9999"], [style*="z-index: 9998"]');
+    blockingElements.forEach(el => {
+      if (el.style.display !== 'none') {
+        el.style.display = 'none';
+        console.log('Removed blocking element:', el);
+      }
+    });
+    
+    // Force show mobile controls
+    if (mobileControls && mobileControls.isMobile) {
+      mobileControls.isLandscape = true;
+      mobileControls.controlsShown = true;
+      mobileControls.showJoysticks();
+    }
+  }, 10000);
+});
+
+// Show mobile instructions on first load and handle orientation
+if (mobileControls && mobileControls.isMobile) {
+  // Check initial orientation immediately
+  console.log('Initial mobile setup - checking orientation');
+  mobileControls.checkOrientation();
+  
+  // Add window load event to ensure proper initialization
+  window.addEventListener('load', () => {
+    console.log('Window loaded - forcing orientation check');
+    mobileControls.forceOrientationCheck();
+  });
+  
+  // Add a manual trigger for testing
+  document.addEventListener('click', () => {
+    if (mobileControls && mobileControls.isMobile) {
+      console.log('Manual click - checking orientation');
+      mobileControls.checkOrientation();
+    }
+  });
+  
+  // Show mobile instructions after a shorter delay
+  setTimeout(() => {
+    const mobileInstructions = document.createElement('div');
+    mobileInstructions.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9998;
+      color: white;
+      font-family: 'Poppins', sans-serif;
+      text-align: center;
+      padding: 20px;
+    `;
+    mobileInstructions.innerHTML = `
+      <div>
+        <div style="font-size: 48px; margin-bottom: 20px;">🎮</div>
+        <div style="font-size: 24px; margin-bottom: 15px; font-weight: 600;">Mobile Controls</div>
+        <div style="font-size: 16px; margin-bottom: 10px;">• Left joystick: Move</div>
+        <div style="font-size: 16px; margin-bottom: 10px;">• Touch & drag: Look around</div>
+        <div style="font-size: 16px; margin-bottom: 10px;">• Tap on objects: Interact with hidden cubes</div>
+        <div style="font-size: 16px; margin-bottom: 10px;">• ↑ button: Jump</div>
+        <div style="font-size: 16px; margin-bottom: 10px;">• ↓ button: Crouch/Stand</div>
+        <div style="font-size: 16px; margin-bottom: 10px;">• ⛶ button: Fullscreen</div>
+        <div style="font-size: 14px; margin-bottom: 20px; opacity: 0.8;">Tap anywhere to start playing</div>
+        <div style="font-size: 12px; opacity: 0.6;">Rotate to landscape for best experience</div>
+      </div>
+    `;
+    
+    mobileInstructions.addEventListener('click', () => {
+      mobileInstructions.remove();
+    });
+    
+    document.body.appendChild(mobileInstructions);
+  }, 500); // Reduced delay to 500ms
+}
+
+// Main Configuration Object
+const sceneConfig = {
+  "sceneSettings": {
+    "initialPosition": [0, -0.5, 0], // This puts feet at groundLevel
+    "gravity": [0, -10, 0],
+    "groundLevel": -1.35,
+    "playerHeight": 1.7,
+    "crouchHeight": 1.0,
+    "playerRadius": 0.3,
+    "cameraOffset": 0.1,
+    "maxFlyHeight": 0.0, // or higher if you want to allow flying up
+    "walkSpeed": 4.0,
+    "crouchSpeed": 2.0,
+    "jumpForce": 6.0,
+    "flySpeed": 3.0,
+    "mouseSensitivity": 0.002,
+    "dragSensitivity": 0.01,
+    "rotationSensitivity": 0.01
+  },
+  "splat": {
+    "name": "KeshavNarayanChowk",
+    "url": "/KeshavNarayanChowk.splat",
+    "position": [0, 0, -3],
+    "rotation": [Math.PI, 0, 0], // 180° flip
+    "scale": [1, 1, 1]
+  },
+  "boundingBox": {
+    "polygon": [
+      [-0.5, 1.8],
+      [-4.5, -3.4], 
+      [2, -7.2],
+      [4.4, -3.5]
+    ]
+  },
+  "treasureHunt": {
+    "startMessage": "Find the hidden clues!",
+    "endMessage": "बधाई छ! तपाईंले यो खेल जित्नुभएको छ।",
+    "gameMode": "sequential", // or "any_order"
+    "clues": [
+      {
+        "name": "helloCube",
+        "title": "Clue",
+        "hint": "जहाँ चार छायाहरू स्थिर उभिएका छन्...",
+        "position": [2.84, -0.42, -3.30],
+        "scale": [0.25, 0.25, 0.25],
+        "interactionDistance": 1.0,
+        "level": 0
+      },
+      {
+        "name": "newCube", 
+        "title": "Clue",
+        "hint": "पछाडिबाट हेर्दा, यो त दायाँ तिर पर्छ...",
+        "position": [-0.7, 0.2, -3.9],
+        "scale": [0.275, 0.275, 0.275],
+        "interactionDistance": 3.0,
+        "level": 1
+      },
+      {
+        "name": "anotherCube2",
+        "title": "Congratulations", 
+        "hint": "बधाई छ! तपाईंले यो खेल जित्नुभएको छ।",
+        "position": [-2.3, 0.1, -0.5],
+        "scale": [0.25, 0.25, 0.25],
+        "interactionDistance": 1.0,
+        "level": 2
+      }
+    ]
+  },
+  "obstacles": [
+    {
+      "name": "redCube",
+      "type": "impenetrable",
+      "position": [-0.523, 0.082, -3.574],
+      "rotation": [0.010, 0.750, 0.000],
+      "scale": [1.5, 1.5, 1.5],
+      "manipulatable": true,
+      "physicsRadius": 0.85,
+      "pushStrength": 5.0,
+      "escapeDistance": 1.0
+    }
+  ],
+  "physics": {
+    "groundCollider": {
+      "size": [50, 0.1, 50],
+      "position": [0, -1.45, 0] // GROUND_LEVEL - 0.1
+    },
+    "playerCollider": {
+      "friction": 0.1,
+      "restitution": 0.1,
+      "linearDamping": 5.0,
+      "angularDamping": 10.0
+    },
+    "cubeCollider": {
+      "size": [0.125, 0.125, 0.125]
+    }
+  },
+  "ui": {
+    "crosshair": {
+      "centerDotSize": 2,
+      "lineLength": 8,
+      "lineThickness": 1,
+      "glowRadius": 4,
+      "themeColor": '#429fb8'
+    },
+    "linkCubes": {
+      "size": [0.6, 0.6, 0.6],
+      "glowSize": [0.7, 0.7, 0.7],
+      "color": 0x429fb8,
+      "opacity": 0.8,
+      "glowOpacity": 0.3
+    }
+  }
+};
+
+// Export/Import System
+export { sceneConfig };
+
+// Multiple scenes configuration
+export const scenes = {
+  "KeshavNarayanChowk": sceneConfig,
+  // Add more scenes here as needed
+  // "AnotherLocation": anotherConfig
+};
+
+// Configuration Validation System
+function validateConfig(config) {
+  const errors = [];
+  const warnings = [];
+
+  // Check if config is an object
+  if (!config || typeof config !== 'object') {
+    errors.push("Configuration must be a valid object");
+    return { isValid: false, errors, warnings };
+  }
+
+  // Validate sceneSettings
+  if (!config.sceneSettings) {
+    errors.push("Missing required 'sceneSettings' section");
+  } else {
+    const settings = config.sceneSettings;
+    
+    // Validate initialPosition
+    if (!Array.isArray(settings.initialPosition) || settings.initialPosition.length !== 3) {
+      errors.push("sceneSettings.initialPosition must be an array with 3 elements [x, y, z]");
+    }
+    
+    // Validate gravity
+    if (!Array.isArray(settings.gravity) || settings.gravity.length !== 3) {
+      errors.push("sceneSettings.gravity must be an array with 3 elements [x, y, z]");
+    }
+    
+    // Validate numeric values
+    const numericFields = ['groundLevel', 'playerHeight', 'crouchHeight', 'playerRadius', 
+                          'cameraOffset', 'maxFlyHeight', 'walkSpeed', 'crouchSpeed', 
+                          'jumpForce', 'flySpeed', 'mouseSensitivity', 'dragSensitivity', 'rotationSensitivity'];
+    
+    numericFields.forEach(field => {
+      if (typeof settings[field] !== 'number') {
+        errors.push(`sceneSettings.${field} must be a number`);
+      }
+    });
+  }
+
+  // Validate splat configuration
+  if (!config.splat) {
+    errors.push("Missing required 'splat' section");
+  } else {
+    const splat = config.splat;
+    if (!splat.url) errors.push("splat.url is required");
+    if (!Array.isArray(splat.position) || splat.position.length !== 3) {
+      errors.push("splat.position must be an array with 3 elements [x, y, z]");
+    }
+    if (!Array.isArray(splat.rotation) || splat.rotation.length !== 3) {
+      errors.push("splat.rotation must be an array with 3 elements [x, y, z]");
+    }
+  }
+
+  // Validate boundingBox
+  if (!config.boundingBox || !Array.isArray(config.boundingBox.polygon)) {
+    errors.push("boundingBox.polygon must be an array of coordinate pairs");
+  } else {
+    config.boundingBox.polygon.forEach((point, index) => {
+      if (!Array.isArray(point) || point.length !== 2) {
+        errors.push(`boundingBox.polygon[${index}] must be an array with 2 elements [x, z]`);
+      }
+    });
+  }
+
+  // Validate treasureHunt
+  if (!config.treasureHunt) {
+    errors.push("Missing required 'treasureHunt' section");
+  } else {
+    const hunt = config.treasureHunt;
+    if (!Array.isArray(hunt.clues)) {
+      errors.push("treasureHunt.clues must be an array");
+    } else {
+      // Validate each clue
+      hunt.clues.forEach((clue, index) => {
+        if (!clue.name) errors.push(`treasureHunt.clues[${index}].name is required`);
+        if (!Array.isArray(clue.position) || clue.position.length !== 3) {
+          errors.push(`treasureHunt.clues[${index}].position must be an array with 3 elements [x, y, z]`);
+        }
+        if (!Array.isArray(clue.scale) || clue.scale.length !== 3) {
+          errors.push(`treasureHunt.clues[${index}].scale must be an array with 3 elements [x, y, z]`);
+        }
+        if (typeof clue.level !== 'number') {
+          errors.push(`treasureHunt.clues[${index}].level must be a number`);
+        }
+      });
+      
+      // Check for sequential levels
+      const levels = hunt.clues.map(clue => clue.level).sort((a, b) => a - b);
+      for (let i = 0; i < levels.length - 1; i++) {
+        if (levels[i + 1] !== levels[i] + 1) {
+          warnings.push(`Non-sequential clue levels detected: ${levels.join(', ')}`);
+          break;
+        }
+      }
+    }
+  }
+
+  // Validate obstacles
+  if (config.obstacles && Array.isArray(config.obstacles)) {
+    config.obstacles.forEach((obstacle, index) => {
+      if (!obstacle.name) errors.push(`obstacles[${index}].name is required`);
+      if (!Array.isArray(obstacle.position) || obstacle.position.length !== 3) {
+        errors.push(`obstacles[${index}].position must be an array with 3 elements [x, y, z]`);
+      }
+      if (!Array.isArray(obstacle.rotation) || obstacle.rotation.length !== 3) {
+        errors.push(`obstacles[${index}].rotation must be an array with 3 elements [x, y, z]`);
+      }
+      if (!Array.isArray(obstacle.scale) || obstacle.scale.length !== 3) {
+        errors.push(`obstacles[${index}].scale must be an array with 3 elements [x, y, z]`);
+      }
+    });
+  }
+
+  // Validate physics
+  if (!config.physics) {
+    errors.push("Missing required 'physics' section");
+  } else {
+    const physics = config.physics;
+    
+    if (physics.groundCollider) {
+      if (!Array.isArray(physics.groundCollider.size) || physics.groundCollider.size.length !== 3) {
+        errors.push("physics.groundCollider.size must be an array with 3 elements [x, y, z]");
+      }
+      if (!Array.isArray(physics.groundCollider.position) || physics.groundCollider.position.length !== 3) {
+        errors.push("physics.groundCollider.position must be an array with 3 elements [x, y, z]");
+      }
+    }
+    
+    if (physics.playerCollider) {
+      const playerFields = ['friction', 'restitution', 'linearDamping', 'angularDamping'];
+      playerFields.forEach(field => {
+        if (typeof physics.playerCollider[field] !== 'number') {
+          errors.push(`physics.playerCollider.${field} must be a number`);
+        }
+      });
+    }
+  }
+
+  // Validate UI
+  if (!config.ui) {
+    errors.push("Missing required 'ui' section");
+  } else {
+    const ui = config.ui;
+    
+    if (ui.crosshair) {
+      const crosshairFields = ['centerDotSize', 'lineLength', 'lineThickness', 'glowRadius'];
+      crosshairFields.forEach(field => {
+        if (typeof ui.crosshair[field] !== 'number') {
+          errors.push(`ui.crosshair.${field} must be a number`);
+        }
+      });
+    }
+    
+    if (ui.linkCubes) {
+      if (!Array.isArray(ui.linkCubes.size) || ui.linkCubes.size.length !== 3) {
+        errors.push("ui.linkCubes.size must be an array with 3 elements [x, y, z]");
+      }
+      if (!Array.isArray(ui.linkCubes.glowSize) || ui.linkCubes.glowSize.length !== 3) {
+        errors.push("ui.linkCubes.glowSize must be an array with 3 elements [x, y, z]");
+      }
+      if (typeof ui.linkCubes.color !== 'number') {
+        errors.push("ui.linkCubes.color must be a number (hex color)");
+      }
+      if (typeof ui.linkCubes.opacity !== 'number') {
+        errors.push("ui.linkCubes.opacity must be a number");
+      }
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+
+// Dynamic Scene Loading System
+async function loadScene(configName) {
+  try {
+    const config = scenes[configName];
+    if (!config) {
+      throw new Error(`Scene configuration '${configName}' not found`);
+    }
+
+    // Validate the configuration
+    const validation = validateConfig(config);
+    if (!validation.isValid) {
+      console.error("Configuration validation failed:", validation.errors);
+      throw new Error("Invalid configuration");
+    }
+
+    if (validation.warnings.length > 0) {
+      console.warn("Configuration warnings:", validation.warnings);
+    }
+
+    // Initialize the scene from configuration
+    await initializeFromConfig(config);
+    
+    console.log(`Scene '${configName}' loaded successfully`);
+    return true;
+  } catch (error) {
+    console.error(`Failed to load scene '${configName}':`, error);
+    return false;
+  }
+}
+
+// Initialize scene from configuration
+async function initializeFromConfig(config) {
+  // Store the current configuration
+  Object.assign(sceneConfig, config);
+  
+  // Reinitialize systems that depend on configuration
+  await reinitializeSystems();
+}
+
+// Reinitialize systems after config changes
+async function reinitializeSystems() {
+  // Clear existing objects
+  clearScene();
+  
+  // Reinitialize physics
+  if (rapierWorld) {
+    await initPhysics();
+  }
+  
+  // Recreate UI elements
+  recreateUI();
+  
+  // Update game state
+  resetGameState();
+}
+
+// Clear existing scene objects
+function clearScene() {
+  // Remove existing cubes
+  linkCubes.forEach(cube => {
+    if (cube.parent) cube.parent.remove(cube);
+  });
+  linkCubes.length = 0;
+  
+  // Remove physics bodies
+  if (rapierWorld) {
+    // Clear physics bodies (implementation depends on your physics system)
+    console.log("Clearing physics bodies...");
+  }
+  
+  // Clear other scene objects as needed
+  console.log("Scene cleared");
+}
+
+// Recreate UI elements
+function recreateUI() {
+  // Recreate crosshair
+  if (crosshair) {
+    crosshair.remove();
+    crosshair = null;
+  }
+  createCrosshair();
+  
+  // Recreate other UI elements
+  console.log("UI elements recreated");
+}
+
+// Reset game state
+function resetGameState() {
+  gameState = {
+    currentLevel: 0,
+    completedLevels: [],
+    isGameComplete: false
+  };
+  console.log("Game state reset");
+}
+
+// Runtime Configuration Update System
+function updateSceneConfig(updates) {
+  try {
+    // Deep merge the updates
+    deepMerge(sceneConfig, updates);
+    
+    // Validate the updated configuration
+    const validation = validateConfig(sceneConfig);
+    if (!validation.isValid) {
+      console.error("Configuration update validation failed:", validation.errors);
+      throw new Error("Invalid configuration update");
+    }
+    
+    // Reinitialize affected systems
+    reinitializeAffectedSystems(updates);
+    
+    console.log("Scene configuration updated successfully");
+    return true;
+  } catch (error) {
+    console.error("Failed to update scene configuration:", error);
+    return false;
+  }
+}
+
+// Deep merge utility function
+function deepMerge(target, source) {
+  for (const key in source) {
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      if (!target[key]) target[key] = {};
+      deepMerge(target[key], source[key]);
+    } else {
+      target[key] = source[key];
+    }
+  }
+}
+
+// Reinitialize only affected systems
+function reinitializeAffectedSystems(updates) {
+  // Check what sections were updated
+  const updatedSections = Object.keys(updates);
+  
+  if (updatedSections.includes('sceneSettings')) {
+    // Update player physics and movement
+    updatePlayerSettings();
+  }
+  
+  if (updatedSections.includes('treasureHunt')) {
+    // Recreate clue cubes
+    recreateClueCubes();
+  }
+  
+  if (updatedSections.includes('obstacles')) {
+    // Recreate obstacles
+    recreateObstacles();
+  }
+  
+  if (updatedSections.includes('ui')) {
+    // Recreate UI elements
+    recreateUI();
+  }
+  
+  if (updatedSections.includes('physics')) {
+    // Reinitialize physics
+    if (rapierWorld) {
+      initPhysics();
+    }
+  }
+}
+
+// Update player settings
+function updatePlayerSettings() {
+  // Update constants
+  PLAYER_HEIGHT = sceneConfig.sceneSettings.playerHeight;
+  CROUCH_HEIGHT = sceneConfig.sceneSettings.crouchHeight;
+  PLAYER_RADIUS = sceneConfig.sceneSettings.playerRadius;
+  CAMERA_OFFSET = sceneConfig.sceneSettings.cameraOffset;
+  MAX_FLY_HEIGHT = sceneConfig.sceneSettings.maxFlyHeight;
+  WALK_SPEED = sceneConfig.sceneSettings.walkSpeed;
+  CROUCH_SPEED = sceneConfig.sceneSettings.crouchSpeed;
+  JUMP_FORCE = sceneConfig.sceneSettings.jumpForce;
+  FLY_SPEED = sceneConfig.sceneSettings.flySpeed;
+  
+  console.log("Player settings updated");
+}
+
+// Recreate clue cubes
+function recreateClueCubes() {
+  // Clear existing clue cubes
+  linkCubes.forEach(cube => {
+    if (cube.parent) cube.parent.remove(cube);
+  });
+  linkCubes.length = 0;
+  
+  // Recreate from configuration
+  createClueCubesFromConfig();
+}
+
+// Create clue cubes from configuration
+function createClueCubesFromConfig() {
+  sceneConfig.treasureHunt.clues.forEach((clue, index) => {
+    const geometry = new THREE.BoxGeometry(clue.scale[0], clue.scale[1], clue.scale[2]);
+    const material = new THREE.MeshLambertMaterial({ 
+      transparent: true,
+      opacity: 0,
+      visible: false
+    });
+    
+    const cube = new THREE.Mesh(geometry, material);
+    cube.position.set(clue.position[0], clue.position[1], clue.position[2]);
+    cube.userData = {
+      title: clue.title,
+      url: clue.hint,
+      hasPhysics: true,
+      level: clue.level
+    };
+    
+    scene.add(cube);
+    linkCubes.push(cube);
+  });
+  
+  console.log("Clue cubes recreated from configuration");
+}
+
+// Recreate obstacles
+function recreateObstacles() {
+  // Clear existing obstacles
+  if (redCube && redCube.parent) {
+    redCube.parent.remove(redCube);
+  }
+  
+  // Recreate from configuration
+  sceneConfig.obstacles.forEach(obstacle => {
+    if (obstacle.name === 'redCube') {
+      const geometry = new THREE.BoxGeometry(obstacle.scale[0], obstacle.scale[1], obstacle.scale[2]);
+      const material = new THREE.MeshLambertMaterial({ 
+        transparent: true,
+        opacity: 0,
+        visible: false
+      });
+      
+      redCube = new THREE.Mesh(geometry, material);
+      redCube.position.set(obstacle.position[0], obstacle.position[1], obstacle.position[2]);
+      redCube.rotation.set(obstacle.rotation[0], obstacle.rotation[1], obstacle.rotation[2]);
+      redCube.userData = {
+        isImpenetrable: true
+      };
+      
+      scene.add(redCube);
+    }
+  });
+  
+  console.log("Obstacles recreated from configuration");
+}
+
+// Export configuration to file
+function exportConfig(configName = 'KeshavNarayanChowk') {
+  const config = scenes[configName] || sceneConfig;
+  const configString = JSON.stringify(config, null, 2);
+  
+  const blob = new Blob([configString], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${configName}_config.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  console.log(`Configuration exported as ${configName}_config.json`);
+}
+
+// Import configuration from file
+async function importConfig(file) {
+  try {
+    const text = await file.text();
+    const config = JSON.parse(text);
+    
+    // Validate imported configuration
+    const validation = validateConfig(config);
+    if (!validation.isValid) {
+      throw new Error(`Invalid configuration: ${validation.errors.join(', ')}`);
+    }
+    
+    // Add to scenes collection
+    const configName = config.splat?.name || 'ImportedScene';
+    scenes[configName] = config;
+    
+    console.log(`Configuration imported as '${configName}'`);
+    return configName;
+  } catch (error) {
+    console.error('Failed to import configuration:', error);
+    throw error;
+  }
+}
+
+const GROUND_LEVEL = sceneConfig.sceneSettings.groundLevel; // Ground Y position
+
+const linkCubes = []; // <-- Declare this FIRST
+
+// Store physics bodies for cleanup
+const physicsCubes = [];
+
+// Game state system for progressive cube interaction
+let gameState = {
+  currentLevel: 0, // 0 = helloCube, 1 = newCube, 2 = anotherCube2
+  completedLevels: [], // Track which cubes have been clicked
+  isGameComplete: false
+};
+
+// ADD THESE VARIABLES AFTER YOUR EXISTING GLOBAL VARIABLES
+let isDraggingRedCube = false;
+let isRotatingRedCube = false;
+let redCubeManipulationMode = false;
+let dragStartMouse = { x: 0, y: 0 };
+let dragStartPosition = { x: 0, y: 0, z: 0 };
+let rotationStartMouse = { x: 0, y: 0 };
+let rotationStartRotation = { x: 0, y: 0, z: 0 };
+
+// Define the progression order
+const cubeProgression = [
+  { cube: 'helloCube', title: 'Clue', level: 0 },
+  { cube: 'newCube', title: 'Clue', level: 1 },
+  { cube: 'anotherCube2', title: 'Congratulations', level: 2 }
+];
+
+// Function to check if a cube is currently clickable
+function isCubeClickable(cube) {
+  if (!cube || !cube.userData) return false;
+  
+  // Find which level this cube belongs to
+  let cubeLevel = -1;
+  if (cube === helloCube) cubeLevel = 0;
+  else if (cube === newCube) cubeLevel = 1;
+  else if (cube === anotherCube2) cubeLevel = 2;
+  
+  // Only allow clicking if it's the current level
+  return cubeLevel === gameState.currentLevel;
+}
+
+// Function to advance to next level
+function advanceGameState() {
+  gameState.completedLevels.push(gameState.currentLevel);
+  gameState.currentLevel++;
+  
+  if (gameState.currentLevel >= cubeProgression.length) {
+    gameState.isGameComplete = true;
+    console.log("Game completed! All cubes have been clicked in order.");
+  }
+  
+  console.log(`Advanced to level ${gameState.currentLevel}. Completed levels:`, gameState.completedLevels);
+}
+
+// Function to show progression message
+function showProgressionMessage() {
+  let existing = document.getElementById('progression-popup');
+  if (existing) existing.remove();
+  
+  const popup = document.createElement('div');
+  popup.id = 'progression-popup';
+  popup.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(40, 0, 0, 0.95);
+    color: #ff6666;
+    padding: 20px 30px;
+    border-radius: 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 16px;
+    z-index: 20000;
+    border: 2px solid #ff6666;
+    box-shadow: 0 8px 32px rgba(255, 102, 102, 0.2);
+    text-align: center;
+    animation: fadeInOut 3s ease-in-out;
+  `;
+  
+  let message = '';
+  if (gameState.currentLevel === 0) {
+    message = 'Find and click the first clue first!';
+  } else if (gameState.currentLevel === 1) {
+    message = 'Complete the previous clue before accessing this one.';
+  } else if (gameState.currentLevel === 2) {
+    message = 'Follow the sequence - complete the second clue first.';
+  } else {
+    message = 'You have completed all the clues!';
+  }
+  
+  popup.innerHTML = `
+    <div style="font-weight: bold; font-size: 18px; margin-bottom: 10px;">
+      🚫 Not Available Yet
+    </div>
+    <div>${message}</div>
+  `;
+  
+  document.body.appendChild(popup);
+  
+  // Auto-remove after 3 seconds
+  setTimeout(() => {
+    if (popup.parentNode) {
+      popup.remove();
+    }
+  }, 3000);
+}
+
+// Keep all cubes completely invisible regardless of game state
+function updateCubeVisuals() {
+  // All cubes remain completely invisible at all times
+  // No visual changes based on game progression
+}
+
+
+
+// Helper function to identify interactive cubes
+function isNewCube(object) {
+  return object && object.userData && 
+         (object.userData.title === 'New Visible Cube' || 
+          object.userData.title === 'Another Colorful Cube' ||
+          object.userData.title === 'Congratulations!' ||
+          object.userData.title === 'Congratulations' ||
+          object.userData.title === 'Another Cube' ||
+          object.userData.isNewCube === true);
+}
+
+// Function to create physics body for a cube
+function createCubePhysicsBody(cube, world) {
+  console.log("Creating physics body for cube:", cube.userData.title, "at position:", cube.position);
+  
+  const position = cube.position;
+  const scale = cube.scale;
+  
+  // Get the geometry dimensions
+  let width, height, depth;
+  if (cube.geometry.type === 'BoxGeometry') {
+    const params = cube.geometry.parameters;
+    width = (params.width || 1) * scale.x * 0.5;
+    height = (params.height || 1) * scale.y * 0.5;
+    depth = (params.depth || 1) * scale.z * 0.5;
+  } else {
+    width = 0.125;
+    height = 0.125;
+    depth = 0.125;
+  }
+  
+  console.log("Physics body dimensions:", { width, height, depth });
+  
+  // Create fixed (static) rigid body
+  const bodyDesc = RAPIER.RigidBodyDesc.fixed()
+    .setTranslation(position.x, position.y, position.z);
+  
+  const rigidBody = world.createRigidBody(bodyDesc);
+  
+  // Create cuboid collider
+  const colliderDesc = RAPIER.ColliderDesc.cuboid(width, height, depth)
+    .setFriction(0.8)
+    .setRestitution(0.3);
+  
+  const collider = world.createCollider(colliderDesc, rigidBody);
+  
+  cube.userData.physicsBody = rigidBody;
+  cube.userData.physicsCollider = collider;
+  
+  console.log("Physics body successfully created at:", rigidBody.translation());
+  
+  return { body: rigidBody, collider: collider };
+}
+
+// --- Main Game Initialization Function ---
+async function startGame(loadingScreen) {
+  try {
+    // Helper function to add delays
+    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    
+    // Hide any existing crosshair during loading
+    const existingCrosshair = document.getElementById('crosshair');
+    const existingHudCrosshair = document.getElementById('hud-crosshair');
+    if (existingCrosshair) existingCrosshair.style.display = 'none';
+    if (existingHudCrosshair) existingHudCrosshair.style.display = 'none';
+    
+    // Initialize physics
+    loadingScreen.setLoadingText('Initializing physics engine...');
+    loadingScreen.updateProgress(10);
+    await delay(800);
+    
+    loadingScreen.setLoadingText('Loading physics components...');
+    loadingScreen.updateProgress(20);
+    await initPhysics();
+    await delay(600);
+    
+    // Initialize scene
+    loadingScreen.setLoadingText('Loading 3D scene...');
+    loadingScreen.updateProgress(35);
+    await delay(700);
+    
+    loadingScreen.setLoadingText('Setting up renderer...');
+    loadingScreen.updateProgress(50);
+    await delay(500);
+    
+    // Initialize mobile controls
+    loadingScreen.setLoadingText('Setting up controls...');
+    loadingScreen.updateProgress(65);
+    mobileControls = new MobileControls(renderer, camera, scene);
+    await delay(600);
+    
+    // Initialize interaction systems
+    loadingScreen.setLoadingText('Initializing interaction systems...');
+    loadingScreen.updateProgress(80);
+    raycastManager = new RaycastManager(camera, scene);
+    const hudManager = new HUDManager();
+    interactionManager = new InteractionManager(raycastManager, hudManager);
+    await delay(500);
+    
+    // Final steps
+    loadingScreen.setLoadingText('Preparing game interface...');
+    loadingScreen.updateProgress(90);
+    await delay(400);
+    
+    loadingScreen.setLoadingText('Starting game...');
+    loadingScreen.updateProgress(100);
+    await delay(300);
+    
+    // Create UI elements
+    createHowToPlayButton();
+    createTopLeftLogo();
+    createCrosshair(); // Create crosshair after game starts
+    
+    // Hide loading screen and start the game
+    setTimeout(() => {
+      loadingScreen.hide();
+      renderer.domElement.style.display = 'block'; // Show the renderer
+      
+      // Show crosshair when game starts
+      const newCrosshair = document.getElementById('crosshair');
+      if (newCrosshair) newCrosshair.style.display = 'block';
+      
+      animate();
+    }, 500);
+    
+  } catch (error) {
+    console.error('Failed to start game:', error);
+    loadingScreen.setLoadingText('Failed to start game. Please refresh.');
+  }
+}
+
+// Make startGame available globally
+window.startGame = startGame;
+
+// --- Three.js Scene & SPLAT ---
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.domElement.style.display = 'none'; // Hide initially until game starts
+document.body.appendChild(renderer.domElement);
+
+// Initialize mobile controls after Three.js scene setup
+// mobileControls = new MobileControls(renderer, camera, scene);
+// Mobile controls will be initialized in startGame function
+
+// SPLAT mesh - using correct position from second script
+const splatURL = sceneConfig.splat.url;
+const splat = new SplatMesh({ url: splatURL });
+splat.position.set(sceneConfig.splat.position[0], sceneConfig.splat.position[1], sceneConfig.splat.position[2]);
+// Fix orientation - rotate 180 degrees around X axis to flip upside down
+splat.rotation.x = sceneConfig.splat.rotation[0];
+scene.add(splat);
+
+// Add lighting to make MeshLambertMaterial visible
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+directionalLight.position.set(10, 10, 5);
+scene.add(directionalLight);
+
+// ADD THIS AFTER YOUR SCENE/CAMERA/RENDERER SETUP (around line 200-250)
+const transformControls = new TransformControls(camera, renderer.domElement);
+scene.add(transformControls);
+
+// Variable to track if transform controls are active
+let isTransformMode = false;
+
+// Enhanced helloCube with physics - COMPLETELY INVISIBLE
+const helloCubeGeometry = new THREE.BoxGeometry(sceneConfig.treasureHunt.clues[0].scale[0], sceneConfig.treasureHunt.clues[0].scale[1], sceneConfig.treasureHunt.clues[0].scale[2]);
+const helloCubeMaterial = new THREE.MeshLambertMaterial({ 
+  transparent: true,
+  opacity: 0,  // Completely invisible
+  visible: false  // Make it invisible but keep physics
+});
+const helloCube = new THREE.Mesh(helloCubeGeometry, helloCubeMaterial);
+helloCube.position.set(sceneConfig.treasureHunt.clues[0].position[0], sceneConfig.treasureHunt.clues[0].position[1], sceneConfig.treasureHunt.clues[0].position[2]);
+helloCube.userData = {
+  title: 'Clue',
+  url: 'जहाँ चार छायाहरू स्थिर उभिएका छन्,\nती न हल्लिन्छन्, न बोल्छन् तर थाह पाउँछन्।\nतीन पाइला शून्यतिर उक्ल,\nन त आँखा खुला राख न नै मन व्यग्र।\nजुन ठाउँले तिमीलाई फर्काउँछ,\nउहीँबाट मार्ग खुल्छ, यदि तिमी रोक्न जान्छौ।',
+  hasPhysics: true
+};
+scene.add(helloCube);
+linkCubes.length = 0; // Remove all previous cubes
+linkCubes.push(helloCube);
+
+// Enhanced newCube with physics - COMPLETELY INVISIBLE
+const newCubeGeometry = new THREE.BoxGeometry(sceneConfig.treasureHunt.clues[1].scale[0], sceneConfig.treasureHunt.clues[1].scale[1], sceneConfig.treasureHunt.clues[1].scale[2]);
+const newCubeMaterial = new THREE.MeshLambertMaterial({ 
+  transparent: true,
+  opacity: 0,  // Completely invisible
+  visible: false  // Make it invisible but keep physics
+});
+const newCube = new THREE.Mesh(newCubeGeometry, newCubeMaterial);
+newCube.position.set(sceneConfig.treasureHunt.clues[1].position[0], sceneConfig.treasureHunt.clues[1].position[1], sceneConfig.treasureHunt.clues[1].position[2]);
+newCube.userData = {
+  title: 'Clue',
+  url: 'पछाडिबाट हेर्दा, यो त दायाँ तिर पर्छ,\nतर अगाडिबाट सीधा हेर्दा, यो बायाँ छ।\nन त लेखिएको छ, न त कोही बताउँछ,\nतर यही थाममा केही लुकेको छ।\nतेस्रो थाम नजिक गई, शान्त भएर उभिई हेर,\nतिमी नबोली बस्यौ भने, त्यसैले केही देखाउनेछ।',
+  hasPhysics: true,
+  isNewCube: true // <-- Add this
+};
+scene.add(newCube);
+linkCubes.push(newCube);
+
+// Optional: Add a glowing effect to make it even more visible
+// const newCubeGlow = new THREE.Mesh(
+//   new THREE.BoxGeometry(0.8, 0.8, 0.8), 
+//   new THREE.MeshBasicMaterial({
+//     color: 0xff8888,
+//     transparent: true,
+//     opacity: 0.3
+//   })
+// );
+// newCube.add(newCubeGlow);
+
+// Enhanced another cube with physics - COMPLETELY INVISIBLE
+const anotherCube2Geometry = new THREE.BoxGeometry(sceneConfig.treasureHunt.clues[2].scale[0], sceneConfig.treasureHunt.clues[2].scale[1], sceneConfig.treasureHunt.clues[2].scale[2]);
+const anotherCube2Material = new THREE.MeshLambertMaterial({ 
+  transparent: true,
+  opacity: 0,  // Completely invisible
+  visible: false  // Make it invisible but keep physics
+});
+const anotherCube2 = new THREE.Mesh(anotherCube2Geometry, anotherCube2Material);
+anotherCube2.position.set(sceneConfig.treasureHunt.clues[2].position[0], sceneConfig.treasureHunt.clues[2].position[1], sceneConfig.treasureHunt.clues[2].position[2]);
+anotherCube2.userData = {
+  title: 'Congratulations',
+  url: 'बधाई छ! तपाईंले यो खेल जित्नुभएको छ।',
+  hasPhysics: true
+};
+scene.add(anotherCube2);
+linkCubes.push(anotherCube2);
+
+// --- IMPENETRABLE RED CUBE (NOT CLICKABLE, BOUNCES PLAYER) ---
+const redCubeGeometry = new THREE.BoxGeometry(sceneConfig.obstacles[0].scale[0], sceneConfig.obstacles[0].scale[1], sceneConfig.obstacles[0].scale[2]); // 1x2x1
+const redCubeMaterial = new THREE.MeshLambertMaterial({ 
+  transparent: true,
+  opacity: 0,  // Completely invisible
+  visible: false  // Make it invisible but keep physics
+});
+const redCube = new THREE.Mesh(redCubeGeometry, redCubeMaterial);
+// Red cube configuration
+redCube.position.set(sceneConfig.obstacles[0].position[0], sceneConfig.obstacles[0].position[1], sceneConfig.obstacles[0].position[2]);
+redCube.rotation.set(sceneConfig.obstacles[0].rotation[0], sceneConfig.obstacles[0].rotation[1], sceneConfig.obstacles[0].rotation[2]);
+redCube.userData = {
+  isImpenetrable: true
+};
+scene.add(redCube);
+// Physics body for red cube
+let redCubePhysics = null;
+
+
+function moveHelloCube(newX, newY, newZ) {
+  helloCube.position.set(newX, newY, newZ);
+}
+
+// Debug the position: Add some debug logging to see if the position is actually changing:
+// (Place this in your animate loop)
+// console.log("Cube position:", helloCube.position);
+// console.log("Camera position:", camera.position);
+
+
+
+
+function showInfoPopup(title, url) {
+  let existing = document.getElementById('info-popup');
+  if (existing) existing.remove();
+  const popup = document.createElement('div');
+  popup.id = 'info-popup';
+  popup.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.95);
+    color: #3399ff;
+    padding: 24px 32px;
+    border-radius: 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 18px;
+    z-index: 20000;
+    border: 2px solid #3399ff;
+    box-shadow: 0 8px 32px rgba(51,153,255,0.2);
+    text-align: center;
+  `;
+  popup.innerHTML = `<div style="font-weight:bold;font-size:22px;margin-bottom:10px;">${title}</div><div>पछाडिबाट हेर्दा, यो त दायाँ तिर पर्छ,\nतर अगाडिबाट सीधा हेर्दा, यो बायाँ छ।\nन त लेखिएको छ, न त कोही बताउँछ,\nतर यही थाममा केही लुकेको छ।\nतेस्रो थाम नजिक गई, शान्त भएर उभिई हेर,\nतिमी नबोली बस्यौ भने, त्यसैले केही देखाउनेछ।</div><br><button id="close-popup-btn" style="margin-top:10px;padding:6px 18px;background:#3399ff;color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;">Close</button>`;
+  document.body.appendChild(popup);
+  document.getElementById('close-popup-btn').onclick = () => popup.remove();
+}
+
+
+const originalShowInfoPopup = showInfoPopup;
+showInfoPopup = function(title, url) {
+  if (url === 'जहाँ चार छायाहरू स्थिर उभिएका छन्,\nती न हल्लिन्छन्, न बोल्छन् तर थाह पाउँछन्।\nतीन पाइला शून्यतिर उक्ल,\nन त आँखा खुला राख न नै मन व्यग्र।\nजुन ठाउँले तिमीलाई फर्काउँछ,\nउहीँबाट मार्ग खुल्छ, यदि तिमी रोक्न जान्छौ।') {
+    let existing = document.getElementById('info-popup');
+    if (existing) existing.remove();
+    const popup = document.createElement('div');
+    popup.id = 'info-popup';
+    popup.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.95);
+      color: #3399ff;
+      padding: 24px 32px;
+      border-radius: 12px;
+      font-family: 'Courier New', monospace;
+      font-size: 18px;
+      z-index: 20000;
+      border: 2px solid #3399ff;
+      box-shadow: 0 8px 32px rgba(51,153,255,0.2);
+      text-align: center;
+    `;
+    popup.innerHTML = `<div style="font-weight:bold;font-size:22px;margin-bottom:10px;">${title}</div><div>जहाँ चार छायाहरू स्थिर उभिएका छन्,\nती न हल्लिन्छन्, न बोल्छन् तर थाह पाउँछन्।\nतीन पाइला शून्यतिर उक्ल,\nन त आँखा खुला राख न नै मन व्यग्र।\nजुन ठाउँले तिमीलाई फर्काउँछ,\nउहीँबाट मार्ग खुल्छ, यदि तिमी रोक्न जान्छौ।</div><br><button id="close-popup-btn" style="margin-top:10px;padding:6px 18px;background:#3399ff;color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;">Close</button>`;
+    document.body.appendChild(popup);
+    document.getElementById('close-popup-btn').onclick = () => popup.remove();
+  } else if (url === 'बधाई छ! तपाईंले यो खेल जित्नुभएको छ।') {
+    let existing = document.getElementById('info-popup');
+    if (existing) existing.remove();
+    const popup = document.createElement('div');
+    popup.id = 'info-popup';
+    popup.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.95);
+      color: #ff4444;
+      padding: 24px 32px;
+      border-radius: 12px;
+      font-family: 'Courier New', monospace;
+      font-size: 18px;
+      z-index: 20000;
+      border: 2px solid #ff4444;
+      box-shadow: 0 8px 32px rgba(255,68,68,0.2);
+      text-align: center;
+    `;
+    popup.innerHTML = `<div style="font-weight:bold;font-size:22px;margin-bottom:10px;">${title}</div><div>बधाई छ! तपाईंले यो खेल जित्नुभएको छ।</div><br><button id="close-popup-btn" style="margin-top:10px;padding:6px 18px;background:#ff4444;color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;">Close</button>`;
+    document.body.appendChild(popup);
+    document.getElementById('close-popup-btn').onclick = () => popup.remove();
+  } else {
+    originalShowInfoPopup(title, url);
+  }
+};
+
+
+// --- Replace linkPoints array ---
+// Remove the old linkPoints array and old createLinkCubes function
+
+// Create info popup
+let infoPopup = null;
+function createInfoPopup() {
+  infoPopup = document.createElement('div');
+  infoPopup.id = 'infoPopup';
+  infoPopup.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 20, 40, 0.95);
+    color: #fff;
+    padding: 20px 30px;
+    border-radius: 12px;
+    font-family: Arial, sans-serif;
+    z-index: 10001;
+    border: 2px solid #00ff88;
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+    max-width: 400px;
+    text-align: center;
+    display: none;
+  `;
+  document.body.appendChild(infoPopup);
+}
+
+function hideInfoPopup() {
+  if (infoPopup) {
+    infoPopup.style.display = 'none';
+  }
+}
+
+// XZ Plane boundary polygon
+const BOUNDARY_POLYGON = sceneConfig.boundingBox.polygon;
+
+const linkPoints = [
+  // Remove spawn point cube - empty array
+];
+
+// Create link cubes - updated function
+function createLinkCubes() {
+  const geometry = new THREE.BoxGeometry(sceneConfig.ui.linkCubes.size[0], sceneConfig.ui.linkCubes.size[1], sceneConfig.ui.linkCubes.size[2]); // Medium sized cube
+  const material = new THREE.MeshLambertMaterial({ 
+    color: sceneConfig.ui.linkCubes.color,
+    transparent: true,
+    opacity: sceneConfig.ui.linkCubes.opacity
+  });
+  
+  linkPoints.forEach((point, index) => {
+    // Check if point is within boundary before creating cube
+    if (isPointInPolygon(point.position[0], point.position[2], BOUNDARY_POLYGON)) {
+      const cube = new THREE.Mesh(geometry, material.clone());
+      cube.position.set(...point.position);
+      cube.userData = {
+        index: index,
+        title: point.title,
+        url: point.url,
+        isHovered: false
+      };
+      
+      // Add a gentle glow effect
+      const glowGeometry = new THREE.BoxGeometry(sceneConfig.ui.linkCubes.glowSize[0], sceneConfig.ui.linkCubes.glowSize[1], sceneConfig.ui.linkCubes.glowSize[2]);
+      const glowMaterial = new THREE.MeshBasicMaterial({
+        color: sceneConfig.ui.linkCubes.color,
+        transparent: true,
+        opacity: sceneConfig.ui.linkCubes.glowOpacity
+      });
+      const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+      cube.add(glow);
+      
+      scene.add(cube);
+      linkCubes.push(cube);
+      console.log(`Created cube at: ${point.position[0]}, ${point.position[1]}, ${point.position[2]}`);
+    } else {
+      console.log(`Cube at ${point.position[0]}, ${point.position[2]} is outside boundary polygon`);
+    }
+  });
+}
+
+// Initialize link system
+createLinkCubes();
+createInfoPopup();
+
+// --- CROSSHAIR SYSTEM ---
+let crosshair = null;
+let isPointerLocked = false;
+
+function createCrosshair() {
+  // Hide default cursor
+  document.body.style.cursor = 'none';
+  
+  // Create crosshair container
+  crosshair = document.createElement('div');
+  crosshair.id = 'crosshair';
+  crosshair.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 10000;
+    opacity: 0.8;
+    transition: all 0.1s ease;
+  `;
+
+  // Center dot
+  const centerDot = document.createElement('div');
+  centerDot.style.cssText = `
+    position: absolute;
+    width: ${sceneConfig.ui.crosshair.centerDotSize}px;
+    height: ${sceneConfig.ui.crosshair.centerDotSize}px;
+    background: #429fb8;
+    border-radius: 50%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 ${sceneConfig.ui.crosshair.glowRadius}px rgba(66, 159, 184, 0.5);
+  `;
+
+  // Top line
+  const topLine = document.createElement('div');
+  topLine.style.cssText = `
+    position: absolute;
+    width: ${sceneConfig.ui.crosshair.lineThickness}px;
+    height: ${sceneConfig.ui.crosshair.lineLength}px;
+    background: #429fb8;
+    top: calc(50% - 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    box-shadow: 0 0 ${sceneConfig.ui.crosshair.glowRadius}px rgba(66, 159, 184, 0.5);
+  `;
+
+  // Bottom line
+  const bottomLine = document.createElement('div');
+  bottomLine.style.cssText = `
+    position: absolute;
+    width: ${sceneConfig.ui.crosshair.lineThickness}px;
+    height: ${sceneConfig.ui.crosshair.lineLength}px;
+    background: #429fb8;
+    top: calc(50% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    box-shadow: 0 0 ${sceneConfig.ui.crosshair.glowRadius}px rgba(66, 159, 184, 0.5);
+  `;
+
+  // Left line
+  const leftLine = document.createElement('div');
+  leftLine.style.cssText = `
+    position: absolute;
+    width: ${sceneConfig.ui.crosshair.lineLength}px;
+    height: ${sceneConfig.ui.crosshair.lineThickness}px;
+    background: #429fb8;
+    top: 50%;
+    left: calc(50% - 12px);
+    transform: translateY(-50%);
+    box-shadow: 0 0 ${sceneConfig.ui.crosshair.glowRadius}px rgba(66, 159, 184, 0.5);
+  `;
+
+  // Right line
+  const rightLine = document.createElement('div');
+  rightLine.style.cssText = `
+    position: absolute;
+    width: ${sceneConfig.ui.crosshair.lineLength}px;
+    height: ${sceneConfig.ui.crosshair.lineThickness}px;
+    background: #429fb8;
+    top: 50%;
+    left: calc(50% + 4px);
+    transform: translateY(-50%);
+    box-shadow: 0 0 ${sceneConfig.ui.crosshair.glowRadius}px rgba(66, 159, 184, 0.5);
+  `;
+
+  // Append all elements
+  crosshair.appendChild(centerDot);
+  crosshair.appendChild(topLine);
+  crosshair.appendChild(bottomLine);
+  crosshair.appendChild(leftLine);
+  crosshair.appendChild(rightLine);
+  
+  document.body.appendChild(crosshair);
+  return crosshair;
+}
+
+function updateCrosshairColor(color, intensity = 1) {
+  if (!crosshair) return;
+  
+  const elements = crosshair.children;
+  for (let element of elements) {
+    element.style.background = color;
+    element.style.boxShadow = `0 0 ${sceneConfig.ui.crosshair.glowRadius * intensity}px ${color}80`;
+    element.style.opacity = intensity;
+  }
+}
+
+function animateCrosshairClick() {
+  if (!crosshair) return;
+  
+  // Flash red and scale up briefly
+  updateCrosshairColor('#ff0000', 1.2);
+  crosshair.style.transform = 'translate(-50%, -50%) scale(1.2)';
+  
+  setTimeout(() => {
+    updateCrosshairColor('#00ff00', 0.8);
+    crosshair.style.transform = 'translate(-50%, -50%) scale(1)';
+  }, 100);
+}
+
+function animateCrosshairMovement() {
+  if (!crosshair) return;
+  
+  // Subtle movement animation
+  crosshair.style.transform = 'translate(-50%, -50%) scale(1.05)';
+  setTimeout(() => {
+    crosshair.style.transform = 'translate(-50%, -50%) scale(1)';
+  }, 50);
+}
+
+// Initialize crosshair
+// createCrosshair(); // Will be created in startGame function
+
+// --- Rapier3D Physics & Player Controls ---
+let rapierWorld, playerBody, playerCollider;
+let isGrounded = false;
+let isCrouching = false;
+let velocity = new THREE.Vector3();
+let moveDir = { forward: 0, right: 0 };
+let yaw = 0, pitch = 0;
+const PLAYER_HEIGHT = sceneConfig.sceneSettings.playerHeight;
+const CROUCH_HEIGHT = sceneConfig.sceneSettings.crouchHeight;
+const PLAYER_RADIUS = sceneConfig.sceneSettings.playerRadius;
+const CAMERA_OFFSET = sceneConfig.sceneSettings.cameraOffset;
+const MAX_FLY_HEIGHT = sceneConfig.sceneSettings.maxFlyHeight; // Maximum flying height (0.75 above ground)
+const WALK_SPEED = sceneConfig.sceneSettings.walkSpeed;
+const CROUCH_SPEED = sceneConfig.sceneSettings.crouchSpeed;
+const JUMP_FORCE = sceneConfig.sceneSettings.jumpForce;
+const FLY_SPEED = sceneConfig.sceneSettings.flySpeed;
+
+// Point-in-polygon test (ray casting algorithm)
+function isPointInPolygon(x, z, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    if (((polygon[i][1] > z) !== (polygon[j][1] > z)) &&
+        (x < (polygon[j][0] - polygon[i][0]) * (z - polygon[i][1]) / (polygon[j][1] - polygon[i][1]) + polygon[i][0])) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// --- PROFESSIONAL RAYCAST SYSTEM ---
+class RaycastManager {
+  constructor(camera, scene) {
+    this.camera = camera;
+    this.scene = scene;
+    this.raycaster = new THREE.Raycaster();
+    this.mouse = new THREE.Vector2(0, 0); // Center screen
+    this.currentHit = null;
+    this.raycastDistance = 1000;
+    // Create invisible ground plane for accurate ground positioning
+    this.createAccurateGroundPlane();
+  }
+
+  createAccurateGroundPlane() {
+    // Create a large invisible plane at exact ground level for precise raycasting
+    const groundGeometry = new THREE.PlaneGeometry(200, 200);
+    const groundMaterial = new THREE.MeshBasicMaterial({ 
+      color: 0x00ff00, 
+      transparent: true, 
+      opacity: 0,
+      side: THREE.DoubleSide
+    });
+    this.accurateGroundPlane = new THREE.Mesh(groundGeometry, groundMaterial);
+    this.accurateGroundPlane.rotation.x = -Math.PI / 2;
+    this.accurateGroundPlane.position.set(0, GROUND_LEVEL, -3);
+    this.accurateGroundPlane.name = 'accurate_ground_plane';
+    this.scene.add(this.accurateGroundPlane);
+  }
+
+  // Enhanced raycast with proper world coordinate calculation
+  performRaycast() {
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    this.raycaster.far = this.raycastDistance;
+    // Get ray origin and direction in world space
+    const rayOrigin = this.raycaster.ray.origin.clone();
+    const rayDirection = this.raycaster.ray.direction.clone();
+    // Get all meshes including our accurate ground plane
+    const meshes = [];
+    this.scene.traverse((child) => {
+      if (child.isMesh && child.visible) {
+        meshes.push(child);
+      }
+    });
+    
+    console.log('Raycast debug:', {
+      mouse: this.mouse,
+      rayOrigin: rayOrigin,
+      rayDirection: rayDirection,
+      meshesCount: meshes.length,
+      meshes: meshes.map(m => ({ name: m.name, userData: m.userData }))
+    });
+    
+    const intersects = this.raycaster.intersectObjects(meshes, true);
+    if (intersects.length > 0) {
+      // Find the closest meaningful hit (prioritize interactive objects, then visible objects)
+      let bestHit = intersects[0];
+      for (const hit of intersects) {
+        // First priority: interactive objects (cubes with userData.title)
+        if (hit.object.userData && hit.object.userData.title) {
+          bestHit = hit;
+          break;
+        }
+        // Second priority: visible objects (not ground plane and has some opacity)
+        if (hit.object.name !== 'accurate_ground_plane' && 
+            hit.object.material && 
+            hit.object.material.opacity > 0) {
+          bestHit = hit;
+          // Don't break here, keep looking for interactive objects
+        }
+      }
+      // Calculate precise world position accounting for all transformations
+      let worldPosition = bestHit.point.clone();
+      // If hitting the SPLAT mesh, adjust coordinates relative to its transform
+      if (bestHit.object === splat || bestHit.object.parent === splat) {
+        // Account for SPLAT position and rotation
+        const splatMatrix = new THREE.Matrix4();
+        splat.updateMatrixWorld(true);
+        splatMatrix.copy(splat.matrixWorld);
+        // Transform the hit point to world coordinates
+        worldPosition.applyMatrix4(splatMatrix);
+      }
+      return {
+        hasHit: true,
+        point: worldPosition,
+        localPoint: bestHit.point.clone(),
+        object: bestHit.object,
+        distance: bestHit.distance,
+        normal: bestHit.face ? bestHit.face.normal.clone().normalize() : new THREE.Vector3(0, 1, 0),
+        uv: bestHit.uv || null,
+        worldPosition: worldPosition,
+        objectType: this.getObjectType(bestHit.object),
+        rayOrigin: rayOrigin,
+        rayDirection: rayDirection
+      };
+    } else {
+      // No hit - calculate precise ground intersection manually
+      const t = (GROUND_LEVEL - rayOrigin.y) / rayDirection.y;
+      const groundIntersection = rayOrigin.clone().add(rayDirection.clone().multiplyScalar(t));
+      return {
+        hasHit: false,
+        point: groundIntersection,
+        localPoint: groundIntersection.clone(),
+        object: null,
+        distance: Math.abs(t),
+        normal: new THREE.Vector3(0, 1, 0),
+        uv: null,
+        worldPosition: groundIntersection,
+        objectType: 'ground',
+        rayOrigin: rayOrigin,
+        rayDirection: rayDirection
+      };
+    }
+  }
+  
+  getObjectType(object) {
+    if (!object) return 'void';
+    if (object.userData.title) return 'interactive';
+    if (object.name) return object.name.toLowerCase();
+    if (object.geometry) {
+      if (object.geometry.type === 'PlaneGeometry') return 'surface';
+      if (object.geometry.type === 'BoxGeometry') return 'cube';
+      if (object.geometry.type === 'SphereGeometry') return 'sphere';
+    }
+    return 'mesh';
+  }
+  
+  update() {
+    this.currentHit = this.performRaycast();
+    return this.currentHit;
+  }
+}
+
+// --- PROFESSIONAL HUD SYSTEM (UPDATED FOR PLAYER POSITION) ---
+class HUDManager {
+  constructor() {
+    this.elements = {};
+    this.createControlsDisplay();
+    this.createCrosshair();
+  }
+  
+
+  
+  createControlsDisplay() {
+    const display = document.createElement('div');
+    display.id = 'hud-controls';
+    display.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #00ff88;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      line-height: 1.2;
+      border: 1px solid rgba(0, 255, 136, 0.2);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(5px);
+      z-index: 1000;
+      min-width: 120px;
+      ${mobileControls && mobileControls.isMobile ? 'display: none;' : ''}
+    `;
+    display.innerHTML = `
+      <div style="color: #429fb8; font-weight: bold; margin-bottom: 4px; font-size: 11px;">
+        Controls
+      </div>
+      <div style="color: #fff; line-height: 1.1;">
+        <div style="margin-bottom: 2px;">
+          <span style="color: #429fb8; font-weight: bold;">WASD:</span> 
+          <span style="color: #fff;">Move</span>
+        </div>
+        <div style="margin-bottom: 2px;">
+          <span style="color: #429fb8; font-weight: bold;">Space:</span> 
+          <span style="color: #fff;">Jump/Fly</span>
+        </div>
+        <div style="margin-bottom: 2px;">
+          <span style="color: #429fb8; font-weight: bold;">Shift:</span> 
+          <span style="color: #fff;">Fly Down</span>
+        </div>
+        <div style="margin-bottom: 2px;">
+          <span style="color: #429fb8; font-weight: bold;">C:</span> 
+          <span style="color: #fff;">Crouch</span>
+        </div>
+        <div style="margin-bottom: 2px;">
+          <span style="color: #429fb8; font-weight: bold;">Mouse:</span> 
+          <span style="color: #fff;">Look</span>
+        </div>
+        <div style="margin-bottom: 2px;">
+          <span style="color: #429fb8; font-weight: bold;">Click:</span> 
+          <span style="color: #fff;">Interact</span>
+        </div>
+        <div style="margin-bottom: 2px;">
+          <span style="color: #429fb8; font-weight: bold;">ESC:</span> 
+          <span style="color: #fff;">Cursor Out</span>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(display);
+    this.elements.controls = display;
+  }
+  
+  createCrosshair() {
+    const crosshair = document.createElement('div');
+    crosshair.id = 'hud-crosshair';
+    crosshair.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 10000;
+      width: 20px;
+      height: 20px;
+      ${mobileControls && mobileControls.isMobile ? 'display: block !important;' : ''}
+    `;
+    // Create crosshair elements
+    const elements = [
+      { w: 2, h: 8, x: 9, y: 2 }, // top
+      { w: 2, h: 8, x: 9, y: 10 }, // bottom  
+      { w: 8, h: 2, x: 2, y: 9 }, // left
+      { w: 8, h: 2, x: 10, y: 9 }, // right
+      { w: 2, h: 2, x: 9, y: 9 }  // center
+    ];
+    elements.forEach(el => {
+      const div = document.createElement('div');
+      div.style.cssText = `
+        position: absolute;
+        width: ${el.w}px;
+        height: ${el.h}px;
+        left: ${el.x}px;
+        top: ${el.y}px;
+        background: #429fb8;
+        box-shadow: 0 0 4px rgba(66, 159, 184, 0.6);
+        transition: all 0.1s ease;
+      `;
+      crosshair.appendChild(div);
+    });
+    document.body.appendChild(crosshair);
+    this.elements.crosshair = crosshair;
+  }
+  
+
+  
+  // Keep the raycast-based crosshair updates for interaction feedback
+  updateCrosshairState(hitInfo, playerPosition) {
+    if (!this.elements.crosshair) return;
+    
+    let color = '#429fb8';
+    let intensity = '0.6';
+    let isInteractive = false;
+
+    if (hitInfo && hitInfo.object && hitInfo.object.userData && hitInfo.object.userData.title && playerPosition) {
+      const objPos = hitInfo.object.position;
+      const dx = playerPosition.x - objPos.x;
+      const dy = playerPosition.y - objPos.y;
+      const dz = playerPosition.z - objPos.z;
+      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+      let threshold = 1.0; // default for helloCube
+      if (isNewCube(hitInfo.object)) {
+        threshold = 3.0; // clickable for newCube within 3 meters (reduced from 10)
+      }
+      
+      // NEW: Check if cube is clickable based on game progression
+      const isClickable = isCubeClickable(hitInfo.object);
+      
+      console.log(`Distance to ${hitInfo.object.userData.title}: ${dist.toFixed(2)}m, threshold: ${threshold}m, clickable: ${isClickable}, gameState.currentLevel: ${gameState.currentLevel}`);
+      
+      if (dist < threshold && isClickable) {
+        color = '#ffaa00'; // Yellow for interactive
+        intensity = '0.8';
+        isInteractive = true;
+      } else if (dist < threshold && !isClickable) {
+        color = '#ff6666'; // Red for not yet clickable
+        intensity = '0.6';
+        isInteractive = false;
+      }
+    } else if (hitInfo && hitInfo.objectType === 'void') {
+      color = '#666';
+      intensity = '0.4';
+    } else if (hitInfo && hitInfo.hasHit) {
+      color = '#00aaff';
+      intensity = '0.7';
+    }
+
+    if (isInteractive) {
+      this.showCircleCrosshair(color, intensity);
+    } else {
+      this.showPlusCrosshair(color, intensity);
+    }
+  }
+  
+  showCircleCrosshair(color, intensity) {
+    if (!this.elements.crosshair) return;
+    
+    // Clear existing elements
+    this.elements.crosshair.innerHTML = '';
+    
+    // Create circle crosshair
+    const circle = document.createElement('div');
+    circle.style.cssText = `
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      border: 2px solid ${color};
+      border-radius: 50%;
+      box-shadow: 0 0 8px ${color}${Math.floor(parseInt(intensity) * 255).toString(16)};
+      transition: all 0.1s ease;
+    `;
+    
+    // Add center dot
+    const centerDot = document.createElement('div');
+    centerDot.style.cssText = `
+      position: absolute;
+      width: 2px;
+      height: 2px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: ${color};
+      border-radius: 50%;
+      box-shadow: 0 0 4px ${color}${Math.floor(parseInt(intensity) * 255).toString(16)};
+    `;
+    
+    circle.appendChild(centerDot);
+    this.elements.crosshair.appendChild(circle);
+  }
+  
+  showPlusCrosshair(color, intensity) {
+    if (!this.elements.crosshair) return;
+    
+    // Clear existing elements
+    this.elements.crosshair.innerHTML = '';
+    
+    // Create plus crosshair elements
+    const elements = [
+      { w: 2, h: 8, x: 9, y: 2 }, // top
+      { w: 2, h: 8, x: 9, y: 10 }, // bottom  
+      { w: 8, h: 2, x: 2, y: 9 }, // left
+      { w: 8, h: 2, x: 10, y: 9 }, // right
+      { w: 2, h: 2, x: 9, y: 9 }  // center
+    ];
+    
+    elements.forEach(el => {
+      const div = document.createElement('div');
+      div.style.cssText = `
+        position: absolute;
+        width: ${el.w}px;
+        height: ${el.h}px;
+        left: ${el.x}px;
+        top: ${el.y}px;
+        background: ${color};
+        box-shadow: 0 0 4px ${color}${Math.floor(parseInt(intensity) * 255).toString(16)};
+        transition: all 0.1s ease;
+      `;
+      this.elements.crosshair.appendChild(div);
+    });
+  }
+  
+  animateCrosshairClick() {
+    if (!this.elements.crosshair) return;
+    this.elements.crosshair.style.transform = 'translate(-50%, -50%) scale(1.2)';
+    setTimeout(() => {
+      this.elements.crosshair.style.transform = 'translate(-50%, -50%) scale(1)';
+    }, 100);
+  }
+}
+
+// --- ENHANCED INTERACTION SYSTEM (UPDATED) ---
+class InteractionManager {
+  constructor(raycastManager, hudManager) {
+    this.raycastManager = raycastManager;
+    this.hudManager = hudManager;
+    this.lastHitObject = null;
+  }
+  
+  // Updated to handle raycast updates
+  update(playerBody, isGrounded, isCrouching, currentVel) {
+    // Still do raycast for interaction purposes
+    const hitInfo = this.raycastManager.update();
+    const playerPos = playerBody ? playerBody.translation() : null;
+    
+    console.log('InteractionManager update:', {
+      hasHitInfo: !!hitInfo,
+      hitInfo: hitInfo,
+      playerPos: playerPos,
+      isMobile: mobileControls && mobileControls.isMobile
+    });
+    
+    this.hudManager.updateCrosshairState(hitInfo, playerPos);
+    
+    // Handle object interactions
+    this.handleObjectInteractions(hitInfo);
+    
+    return hitInfo;
+  }
+  
+  handleObjectInteractions(hitInfo) {
+    // Reset previous object state
+    if (this.lastHitObject && this.lastHitObject !== hitInfo.object) {
+      this.resetObjectState(this.lastHitObject);
+    }
+    
+    // Update current object state
+    if (hitInfo.hasHit && hitInfo.object) {
+      this.highlightObject(hitInfo.object, hitInfo.objectType);
+    }
+    
+    this.lastHitObject = hitInfo.object;
+  }
+  
+  highlightObject(object, objectType) {
+    if (linkCubes.includes(object)) {
+      // Keep the cube transparent, don't change color on hover
+      object.userData.isHovered = true;
+    }
+  }
+  
+  resetObjectState(object) {
+    if (linkCubes.includes(object)) {
+      // Keep the cube transparent, don't change color on hover
+      object.userData.isHovered = false;
+    }
+  }
+  
+  handleClick(hitInfo, playerPosition) {
+    this.hudManager.animateCrosshairClick();
+    
+    if (hitInfo.hasHit && hitInfo.object && playerPosition) {
+      const userData = hitInfo.object.userData;
+      const objPos = hitInfo.object.position;
+      const dx = playerPosition.x - objPos.x;
+      const dy = playerPosition.y - objPos.y;
+      const dz = playerPosition.z - objPos.z;
+      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+      let threshold = 1.0; // default for helloCube
+      if (isNewCube(hitInfo.object)) {
+        threshold = 3.0; // clickable for newCube within 3 meters (reduced from 10)
+      }
+      
+      // NEW: Check if cube is clickable and within distance
+      if (dist < threshold && userData.title && userData.url) {
+        const isClickable = isCubeClickable(hitInfo.object);
+        
+        console.log(`Click attempt on ${userData.title}: distance=${dist.toFixed(2)}, threshold=${threshold}, isClickable=${isClickable}, gameState.currentLevel=${gameState.currentLevel}`);
+        
+        if (isClickable) {
+          // Show popup and advance game state
+          showInfoPopup(userData.title, userData.url);
+          advanceGameState();
+          return true;
+        } else {
+          // Show message that this cube isn't available yet
+          showProgressionMessage();
+          return false;
+        }
+      }
+    }
+    
+    console.log('Click at position:', hitInfo.worldPosition);
+    return false;
+  }
+}
+
+// Initialize professional systems
+// const raycastManager = new RaycastManager(camera, scene);
+// const hudManager = new HUDManager();
+// const interactionManager = new InteractionManager(raycastManager, hudManager);
+// These will be initialized in startGame function
+
+// Create How to Play button
+function createHowToPlayButton() {
+  const button = document.createElement('div');
+  button.id = 'how-to-play-btn';
+  button.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #429fb8;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 8px;
+    cursor: pointer;
+    border: 1px solid #429fb8;
+    z-index: 1000;
+    transition: all 0.2s ease;
+    user-select: none;
+    touch-action: none;
+  `;
+  
+  button.innerHTML = 'How to Play';
+  
+  // Hover and touch effects
+  button.addEventListener('mouseenter', () => {
+    button.style.background = 'rgba(66, 159, 184, 0.1)';
+  });
+  
+  button.addEventListener('mouseleave', () => {
+    button.style.background = 'rgba(0, 0, 0, 0.6)';
+  });
+  
+  // Touch events for mobile
+  button.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    button.style.background = 'rgba(66, 159, 184, 0.1)';
+    button.style.transform = 'scale(0.95)';
+  }, { passive: false });
+  
+  button.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    button.style.background = 'rgba(0, 0, 0, 0.6)';
+    button.style.transform = 'scale(1)';
+  }, { passive: false });
+  
+  // Click handler
+  button.addEventListener('click', showHowToPlayPopup);
+  
+  document.body.appendChild(button);
+}
+
+// Create top left logo
+function createTopLeftLogo() {
+  const logo = document.createElement('div');
+  logo.id = 'top-left-logo';
+  logo.style.cssText = `
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 1000;
+  `;
+  
+  const img = document.createElement('img');
+  img.src = '/Asset 9@4x-8.png';
+  img.alt = 'Captures Logo';
+  img.style.cssText = `
+    width: 60px;
+    height: auto;
+    opacity: 0.8;
+    transition: opacity 0.2s ease;
+  `;
+  
+  // Hover effect
+  img.addEventListener('mouseenter', () => {
+    img.style.opacity = '1';
+  });
+  
+  img.addEventListener('mouseleave', () => {
+    img.style.opacity = '0.8';
+  });
+  
+  logo.appendChild(img);
+  document.body.appendChild(logo);
+}
+
+// Show How to Play popup
+function showHowToPlayPopup() {
+  // Remove existing popup if any
+  let existing = document.getElementById('how-to-play-popup');
+  if (existing) existing.remove();
+  
+  const popup = document.createElement('div');
+  popup.id = 'how-to-play-popup';
+  popup.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 20000;
+  `;
+  
+  const content = document.createElement('div');
+  content.style.cssText = `
+    background: rgba(0, 0, 0, 0.9);
+    color: #429fb8;
+    padding: 30px;
+    border-radius: 8px;
+    font-family: 'Poppins', sans-serif;
+    font-weight: 500;
+    max-width: 500px;
+    max-height: 70vh;
+    overflow-y: auto;
+    border: 1px solid #429fb8;
+  `;
+  
+  content.innerHTML = `
+    
+    <!-- Include Font Awesome in your HTML <head> -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+<!-- Logo and Title Section -->
+<div style="text-align: center; margin-bottom: 30px;">
+  <img src="/Asset 4@4x-8.png" alt="Captures Logo" style="width: 120px; height: auto; margin-bottom: 15px;">
+  <h2 style="margin: 0; font-family: 'Poppins', sans-serif; font-weight: 600; color: #429fb8; font-size: 24px;">How to play?</h2>
+</div>
+
+<div style="margin-bottom: 20px; font-family: 'Poppins', sans-serif; font-weight: 500; color: #429fb8;">
+  <p style="margin: 0 0 10px 0;">
+    <i class="fas fa-mouse-pointer" style="margin-right: 8px;"></i>
+    Click anywhere to enter First-Person Mode (FPS)
+  </p>
+  <p style="margin: 0 0 10px 0;">
+    <i class="fas fa-person-walking" style="margin-right: 8px;"></i>
+    Move closer to objects and interact to uncover hidden clues
+  </p>
+  <p style="margin: 0 0 10px 0;">
+    <i class="fas fa-cube" style="margin-right: 8px;"></i>
+    Look for invisible clue cubes scattered throughout the environment
+  </p>
+  <p style="margin: 0 0 10px 0;">
+    <i class="fas fa-crosshairs" style="margin-right: 8px;"></i>
+    Yellow crosshair = Interactable object (click to activate)
+  </p>
+  <p style="margin: 0 0 10px 0;">
+    <i class="fas fa-ban" style="margin-right: 8px;"></i>
+    Red crosshair = Not available yet (complete previous objectives)
+  </p>
+  <p style="margin: 0 0 10px 0;">
+    <i class="fas fa-layer-group" style="margin-right: 8px;"></i>
+    Complete levels in sequence to unlock the full story
+  </p>
+</div>
+
+<div style="text-align: center; margin-top: 20px;">
+  <button id="close-how-to-play" style="
+    background: #429fb8;
+    color: #fff;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 4px;
+    font-family: 'Poppins', sans-serif;
+    font-weight: 500;
+    font-size: 14px;
+    cursor: pointer;
+  ">Close</button>
+</div>
+  `;
+  
+  popup.appendChild(content);
+  document.body.appendChild(popup);
+  
+  // Close button functionality
+  document.getElementById('close-how-to-play').addEventListener('click', () => {
+    popup.remove();
+  });
+  
+  // Close on background click
+  popup.addEventListener('click', (e) => {
+    if (e.target === popup) {
+      popup.remove();
+    }
+  });
+  
+  // Close on Escape key
+  const escapeHandler = (e) => {
+    if (e.code === 'Escape') {
+      popup.remove();
+      document.removeEventListener('keydown', escapeHandler);
+    }
+  };
+  document.addEventListener('keydown', escapeHandler);
+}
+
+
+
+// Initialize How to Play button
+// createHowToPlayButton(); // Will be called in startGame function
+
+// Initialize position display
+// createPositionDisplay(); // Remove this line
+
+// Enhanced pointer lock for mouse look with crosshair integration
+renderer.domElement.addEventListener('click', () => {
+  renderer.domElement.requestPointerLock();
+  animateCrosshairClick();
+});
+
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === renderer.domElement) {
+    document.addEventListener('mousemove', onMouseMove, false);
+    document.addEventListener('mousedown', onMouseDown, false);
+    document.addEventListener('mouseup', onMouseUp, false);
+    isPointerLocked = true;
+    if (crosshair) crosshair.style.display = 'block';
+  } else {
+    document.removeEventListener('mousemove', onMouseMove, false);
+    document.removeEventListener('mousedown', onMouseDown, false);
+    document.removeEventListener('mouseup', onMouseUp, false);
+    isPointerLocked = false;
+    if (crosshair) crosshair.style.display = 'none';
+    document.body.style.cursor = 'default';
+  }
+});
+
+function onMouseMove(e) {
+  // Desktop mouse input
+  const sensitivity = sceneConfig.sceneSettings.mouseSensitivity;
+  yaw -= e.movementX * sensitivity;
+  pitch -= e.movementY * sensitivity;
+  pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+  // Professional interaction update
+  interactionManager.update();
+}
+
+
+
+function onMouseDown(e) {
+  if (!isPointerLocked) return;
+  switch(e.button) {
+    case 0: // Left click
+      const hitInfo = raycastManager.currentHit;
+      const playerPos = playerBody ? playerBody.translation() : null;
+      interactionManager.handleClick(hitInfo, playerPos);
+      break;
+    case 2: // Right click
+      hudManager.updateCrosshairState({objectType: 'menu', hasHit: false});
+      console.log('Right click detected');
+      break;
+  }
+}
+
+function onMouseUp(e) {
+  if (!isPointerLocked) return;
+  
+  // Reset crosshair color after mouse up
+  setTimeout(() => {
+    updateCrosshairColor('#00ff00', 0.8);
+  }, 150);
+}
+
+// Prevent context menu on right click
+renderer.domElement.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+});
+
+// Mobile touch interaction
+renderer.domElement.addEventListener('touchstart', (e) => {
+  if (!isPointerLocked && mobileControls && mobileControls.isMobile && mobileControls.isLandscape) {
+    e.preventDefault();
+    const touch = e.touches[0];
+    
+    console.log('Mobile touch detected:', { x: touch.clientX, y: touch.clientY });
+    
+    // Use the proper raycast system for mobile touch
+    const mouse = new THREE.Vector2();
+    mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+    
+    console.log('Mouse coordinates:', { x: mouse.x, y: mouse.y });
+    
+    // Update raycast manager with touch position
+    if (raycastManager) {
+      raycastManager.mouse.copy(mouse);
+      const hitInfo = raycastManager.performRaycast();
+      console.log('Raycast hit info:', hitInfo);
+      
+      const playerPos = playerBody ? playerBody.translation() : null;
+      const result = interactionManager.handleClick(hitInfo, playerPos);
+      console.log('Interaction result:', result);
+    } else {
+      console.log('Raycast manager not available');
+    }
+  }
+}, { passive: false });
+
+// ADD THESE NEW MOUSE EVENT LISTENERS
+document.addEventListener('mousedown', (e) => {
+  if (!redCubeManipulationMode) return;
+  
+  // Check if clicking on red cube
+  const mouse = new THREE.Vector2();
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObject(redCube);
+  
+  if (intersects.length > 0) {
+    e.preventDefault();
+    
+    if (e.button === 0) { // Left click - MOVE
+      isDraggingRedCube = true;
+      document.body.style.cursor = 'grabbing';
+      
+      dragStartMouse.x = e.clientX;
+      dragStartMouse.y = e.clientY;
+      dragStartPosition.x = redCube.position.x;
+      dragStartPosition.y = redCube.position.y;
+      dragStartPosition.z = redCube.position.z;
+      
+      console.log("Started dragging red cube");
+      
+    } else if (e.button === 2) { // Right click - ROTATE
+      isRotatingRedCube = true;
+      document.body.style.cursor = 'grab';
+      
+      rotationStartMouse.x = e.clientX;
+      rotationStartMouse.y = e.clientY;
+      rotationStartRotation.x = redCube.rotation.x;
+      rotationStartRotation.y = redCube.rotation.y;
+      rotationStartRotation.z = redCube.rotation.z;
+      
+      console.log("Started rotating red cube");
+    }
+  }
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!redCubeManipulationMode) return;
+  
+  if (isDraggingRedCube) {
+    // Calculate movement based on mouse delta
+    const deltaX = (e.clientX - dragStartMouse.x) * sceneConfig.sceneSettings.dragSensitivity; // Sensitivity
+    const deltaY = -(e.clientY - dragStartMouse.y) * sceneConfig.sceneSettings.dragSensitivity; // Inverted Y
+    
+    // Move relative to camera view
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    const right = new THREE.Vector3();
+    right.crossVectors(forward, camera.up).normalize();
+    const up = new THREE.Vector3();
+    up.crossVectors(right, forward).normalize();
+    
+    // Calculate new position
+    const newPosition = new THREE.Vector3(
+      dragStartPosition.x,
+      dragStartPosition.y,
+      dragStartPosition.z
+    );
+    newPosition.addScaledVector(right, deltaX);
+    newPosition.addScaledVector(up, deltaY);
+    
+    // Update cube position
+    redCube.position.copy(newPosition);
+    
+    // Update physics with enhanced sync
+    updateRedCubePhysics();
+    
+  } else if (isRotatingRedCube) {
+    // Calculate rotation based on mouse delta
+    const deltaX = (e.clientX - rotationStartMouse.x) * sceneConfig.sceneSettings.rotationSensitivity; // Sensitivity
+    const deltaY = (e.clientY - rotationStartMouse.y) * sceneConfig.sceneSettings.rotationSensitivity;
+    
+    // Apply rotation (Y-axis for horizontal mouse, X-axis for vertical mouse)
+    redCube.rotation.y = rotationStartRotation.y + deltaX;
+    redCube.rotation.x = rotationStartRotation.x + deltaY;
+    
+    // Update physics with enhanced sync
+    updateRedCubePhysics();
+  }
+});
+
+document.addEventListener('mouseup', (e) => {
+  if (!redCubeManipulationMode) return;
+  
+  if (isDraggingRedCube && e.button === 0) {
+    isDraggingRedCube = false;
+    document.body.style.cursor = 'grab';
+    
+    const pos = redCube.position;
+    console.log(`Red cube moved to: ${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}`);
+    
+  } else if (isRotatingRedCube && e.button === 2) {
+    isRotatingRedCube = false;
+    document.body.style.cursor = 'grab';
+    
+    const rot = redCube.rotation;
+    console.log(`Red cube rotated to: ${(rot.x * 180/Math.PI).toFixed(0)}°, ${(rot.y * 180/Math.PI).toFixed(0)}°, ${(rot.z * 180/Math.PI).toFixed(0)}°`);
+  }
+});
+
+// PREVENT CONTEXT MENU WHEN RIGHT-CLICKING RED CUBE IN MANIPULATION MODE
+document.addEventListener('contextmenu', (e) => {
+  if (redCubeManipulationMode) {
+    e.preventDefault();
+  }
+});
+
+// ADD THESE FUNCTIONS TO SAVE/LOAD RED CUBE STATE
+
+// Save current red cube state
+function saveRedCubeState() {
+  const state = {
+    position: {
+      x: redCube.position.x,
+      y: redCube.position.y,
+      z: redCube.position.z
+    },
+    rotation: {
+      x: redCube.rotation.x,
+      y: redCube.rotation.y,
+      z: redCube.rotation.z
+    },
+    timestamp: new Date().toISOString()
+  };
+  
+  // Save to browser storage (persists between sessions)
+  localStorage.setItem('redCubeState', JSON.stringify(state));
+  
+  console.log('Red cube state saved:', state);
+  
+  // Show notification
+  showSaveNotification('Red cube state saved!');
+  
+  return state;
+}
+
+// Load red cube state
+function loadRedCubeState() {
+  const savedState = localStorage.getItem('redCubeState');
+  
+  if (savedState) {
+    try {
+      const state = JSON.parse(savedState);
+      
+      // Apply position
+      redCube.position.set(state.position.x, state.position.y, state.position.z);
+      
+      // Apply rotation
+      redCube.rotation.set(state.rotation.x, state.rotation.y, state.rotation.z);
+      
+      // Update physics
+      if (redCubePhysics && redCubePhysics.body) {
+        // Update physics position
+        redCubePhysics.body.setTranslation({
+          x: state.position.x,
+          y: state.position.y,
+          z: state.position.z
+        }, true);
+        
+        // Update physics rotation
+        const euler = new THREE.Euler(state.rotation.x, state.rotation.y, state.rotation.z, 'XYZ');
+        const quat = new THREE.Quaternion().setFromEuler(euler);
+        redCubePhysics.body.setRotation({
+          x: quat.x,
+          y: quat.y,
+          z: quat.z,
+          w: quat.w
+        }, true);
+      }
+      
+      console.log('Red cube state loaded:', state);
+      showSaveNotification('Red cube state loaded!');
+      
+      return state;
+    } catch (error) {
+      console.error('Error loading red cube state:', error);
+      showSaveNotification('Error loading saved state!', true);
+    }
+  } else {
+    console.log('No saved red cube state found');
+    showSaveNotification('No saved state found', true);
+  }
+  
+  return null;
+}
+
+// Export current state as code (copy to clipboard)
+function exportRedCubeAsCode() {
+  const pos = redCube.position;
+  const rot = redCube.rotation;
+  
+  const codeString = `// Red cube configuration
+redCube.position.set(${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)});
+redCube.rotation.set(${rot.x.toFixed(3)}, ${rot.y.toFixed(3)}, ${rot.z.toFixed(3)});`;
+
+  // Copy to clipboard
+  navigator.clipboard.writeText(codeString).then(() => {
+    console.log('Red cube code copied to clipboard:');
+    console.log(codeString);
+    showSaveNotification('Code copied to clipboard!');
+  }).catch(err => {
+    console.error('Failed to copy to clipboard:', err);
+    console.log('Red cube code:');
+    console.log(codeString);
+    showSaveNotification('Check console for code', true);
+  });
+}
+
+// Show save/load notification
+function showSaveNotification(message, isError = false) {
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: ${isError ? 'rgba(255, 0, 0, 0.9)' : 'rgba(66, 159, 184, 0.9)'};
+    color: ${isError ? '#fff' : '#000'};
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: bold;
+    z-index: 10001;
+    animation: slideInOut 3s ease-in-out;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  `;
+  notification.textContent = message;
+  document.body.appendChild(notification);
+  
+  setTimeout(() => {
+    if (notification.parentNode) {
+      notification.remove();
+    }
+  }, 3000);
+}
+
+// Keyboard controls
+const keys = {};
+document.addEventListener('keydown', (e) => { 
+  keys[e.code] = true;
+  
+  // Close popup with Escape
+  if (e.code === 'Escape') {
+    hideInfoPopup();
+  }
+
+  // Change crosshair color when certain keys are pressed
+  if (e.code === 'Space') {
+    updateCrosshairColor('#ffff00', 1.2); // Yellow for jump/fly
+  } else if (e.code === 'KeyC') {
+    updateCrosshairColor('#ff8800', 0.9); // Orange for crouch
+  }
+
+  // ADD THIS NEW CASE:
+  if (e.code === 'KeyM') { // Press M to toggle red cube manipulation mode
+    redCubeManipulationMode = !redCubeManipulationMode;
+    
+    if (redCubeManipulationMode) {
+      // Exit pointer lock to enable cursor
+      document.exitPointerLock();
+      document.body.style.cursor = 'grab';
+      console.log("Red cube manipulation mode ON. Left-click+drag to move, Right-click+drag to rotate, M to exit.");
+    } else {
+      document.body.style.cursor = 'none';
+      isDraggingRedCube = false;
+      isRotatingRedCube = false;
+      console.log("Red cube manipulation mode OFF. Click to re-enter FPS mode.");
+    }
+  }
+
+  // ADD THESE NEW CASES:
+  
+  // Save red cube state
+  if (e.code === 'KeyS' && e.ctrlKey && !e.shiftKey) {
+    e.preventDefault();
+    saveRedCubeState();
+  }
+  
+  // Load red cube state
+  if (e.code === 'KeyL' && e.ctrlKey) {
+    e.preventDefault();
+    loadRedCubeState();
+  }
+  
+  // Export as code
+  if (e.code === 'KeyE' && e.ctrlKey) {
+    e.preventDefault();
+    exportRedCubeAsCode();
+  }
+  
+  // Quick save in manipulation mode
+  if (redCubeManipulationMode && e.code === 'KeyS') {
+    saveRedCubeState();
+  }
+
+  // --- ROTATE RED CUBE WITH R KEY ---
+  if (e.code === 'KeyR') { // Press R to rotate cube
+    const rotations = [
+      [0, 0, 0],           // No rotation
+      [0, Math.PI/2, 0],   // 90° Y rotation  
+      [0, Math.PI, 0],     // 180° Y rotation
+      [0, -Math.PI/2, 0],  // -90° Y rotation
+      [Math.PI/2, 0, 0],   // 90° X rotation
+      [-Math.PI/2, 0, 0],  // -90° X rotation
+    ];
+    window.rotationIndex = (window.rotationIndex || 0) % rotations.length;
+    const rot = rotations[window.rotationIndex];
+    redCube.rotation.set(...rot);
+    // Update physics body rotation to match
+    if (redCubePhysics && redCubePhysics.body) {
+      // Convert Euler to quaternion
+      const euler = new THREE.Euler(...rot, 'XYZ');
+      const quat = new THREE.Quaternion().setFromEuler(euler);
+      redCubePhysics.body.setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w }, true);
+    }
+    console.log(`Rotation ${window.rotationIndex}: [${rot.map(r => (r * 180/Math.PI).toFixed(0) + '°').join(', ')}]`);
+    window.rotationIndex++;
+  }
+});
+
+document.addEventListener('keyup', (e) => { 
+  keys[e.code] = false;
+  
+  // Reset crosshair color when keys are released
+  if (e.code === 'Space' || e.code === 'KeyC') {
+    setTimeout(() => {
+      updateCrosshairColor('#00ff00', 0.8);
+    }, 100);
+  }
+});
+
+function getMoveInput() {
+  // Desktop keyboard input
+  moveDir.forward = (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0);
+  moveDir.right = (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0);
+  
+  // Mobile joystick input
+  if (mobileControls && mobileControls.isMobile && mobileControls.isLandscape) {
+    const mobileInput = mobileControls.getMovementInput();
+    // Override keyboard input with joystick input on mobile
+    moveDir.forward = mobileInput.y;
+    moveDir.right = mobileInput.x;
+  }
+}
+
+// --- Initialize Rapier and Player ---
+async function initPhysics() {
+  await RAPIER.init();
+  rapierWorld = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+
+  // Ground plane positioned at GROUND_LEVEL
+  const groundBodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(sceneConfig.physics.groundCollider.position[0], sceneConfig.physics.groundCollider.position[1], sceneConfig.physics.groundCollider.position[2]);
+  const groundBody = rapierWorld.createRigidBody(groundBodyDesc);
+  const groundColliderDesc = RAPIER.ColliderDesc.cuboid(sceneConfig.physics.groundCollider.size[0], sceneConfig.physics.groundCollider.size[1], sceneConfig.physics.groundCollider.size[2]);
+  rapierWorld.createCollider(groundColliderDesc, groundBody);
+
+  // EXPLICIT BARRIER: Create a physics-only barrier at the helloCube location
+  const barrierBodyDesc = RAPIER.RigidBodyDesc.fixed()
+    .setTranslation(2.84, -0.42, -3.30);
+  const barrierBody = rapierWorld.createRigidBody(barrierBodyDesc);
+  const barrierColliderDesc = RAPIER.ColliderDesc.cuboid(sceneConfig.physics.cubeCollider.size[0], sceneConfig.physics.cubeCollider.size[1], sceneConfig.physics.cubeCollider.size[2])
+    .setFriction(0.8)
+    .setRestitution(0.3);
+  const barrierCollider = rapierWorld.createCollider(barrierColliderDesc, barrierBody);
+
+  // Create physics bodies for link cubes
+  linkCubes.forEach(cube => {
+    if (cube.userData.hasPhysics) {
+      const physics = createCubePhysicsBody(cube, rapierWorld);
+      physicsCubes.push({
+        mesh: cube,
+        body: physics.body,
+        collider: physics.collider
+      });
+    }
+  });
+
+  // ENHANCED RED CUBE PHYSICS - TRULY IMPENETRABLE
+  const redBodyDesc = RAPIER.RigidBodyDesc.fixed()
+    .setTranslation(redCube.position.x, redCube.position.y, redCube.position.z)
+    .setRotation(redCube.quaternion); // Apply current rotation
+  
+  const redBody = rapierWorld.createRigidBody(redBodyDesc);
+
+  // Create a MUCH larger collider to ensure NO gaps - truly impenetrable
+  // Visual cube is 1.5x1.5x1.5, so we use 0.85 for half-extents (much larger)
+  const redColliderDesc = RAPIER.ColliderDesc.cuboid(sceneConfig.obstacles[0].physicsRadius, sceneConfig.obstacles[0].physicsRadius, sceneConfig.obstacles[0].physicsRadius)
+    .setFriction(0.0)        // Zero friction to prevent sliding/sticking
+    .setRestitution(0.0)     // No bounce - completely solid
+    .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+    // REMOVED collision groups - let physics handle it naturally
+
+  const redCollider = rapierWorld.createCollider(redColliderDesc, redBody);
+  redCubePhysics = { mesh: redCube, body: redBody, collider: redCollider };
+
+  console.log("TRULY IMPENETRABLE red cube physics created - 100% solid barrier");
+
+  // ENHANCED PLAYER PHYSICS
+  const spawnPos = sceneConfig.sceneSettings.initialPosition;
+  const playerBodyDesc = RAPIER.RigidBodyDesc.dynamic()
+    .setTranslation(spawnPos[0], spawnPos[1], spawnPos[2])
+    .setLinearDamping(sceneConfig.physics.playerCollider.linearDamping)      // Higher damping for responsive stopping
+    .setAngularDamping(sceneConfig.physics.playerCollider.angularDamping)    // Prevent unwanted rotation
+    .setCanSleep(false);        // Keep player always active
+  
+  playerBody = rapierWorld.createRigidBody(playerBodyDesc);
+  
+  const playerColliderDesc = RAPIER.ColliderDesc.capsule(PLAYER_HEIGHT/2, PLAYER_RADIUS)
+    .setTranslation(0, 0, 0)
+    .setFriction(sceneConfig.physics.playerCollider.friction)           // Very low friction
+    .setRestitution(sceneConfig.physics.playerCollider.restitution)        // Small bounce to prevent getting stuck
+    .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+    // REMOVED collision groups - let physics handle it naturally
+  
+  playerCollider = rapierWorld.createCollider(playerColliderDesc, playerBody);
+
+  console.log("Enhanced player physics initialized");
+}
+
+// Enhanced ground collision detection
+function checkGroundCollision(playerPos) {
+  const rayOriginY = playerPos.y - (isCrouching ? CROUCH_HEIGHT/2 : PLAYER_HEIGHT/2) + 0.1;
+  const rayOrigin = { x: playerPos.x, y: rayOriginY, z: playerPos.z };
+  const rayDir = { x: 0, y: -1, z: 0 };
+  
+  try {
+    const hit = rapierWorld.castRay(rayOrigin, rayDir, PLAYER_RADIUS + 0.1, true);
+    if (hit && hit.colliderHandle !== playerCollider.handle) {
+      return true;
+    }
+  } catch (error) {
+    console.warn("Ground raycast error:", error);
+  }
+  
+  // Fallback check
+  return Math.abs(playerPos.y - (GROUND_LEVEL + PLAYER_RADIUS)) < 0.15;
+}
+
+// ENHANCED: Predictive collision detection for red cube - TRULY IMPENETRABLE
+function wouldCollideWithRedCube(newX, newY, newZ) {
+  if (!redCubePhysics || !redCubePhysics.body) return false;
+  
+  const redPos = redCubePhysics.body.translation();
+  const dx = newX - redPos.x;
+  const dy = newY - redPos.y;
+  const dz = newZ - redPos.z;
+  
+  // Calculate distance to cube center
+  const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+  
+  // Check if player would be too close to cube (MUCH larger safety margin)
+  const cubeRadius = sceneConfig.obstacles[0].physicsRadius; // Much larger than visual (matches collider)
+  const playerRadius = PLAYER_RADIUS;
+  const safeDistance = cubeRadius + playerRadius + 0.2; // Much larger safety margin
+  
+  return distance < safeDistance;
+}
+
+// ENHANCED: Apply STRONG pushback when collision detected - TRULY IMPENETRABLE
+function applyCollisionPushback(playerPos) {
+  if (!redCubePhysics || !redCubePhysics.body) return;
+  
+  const redPos = redCubePhysics.body.translation();
+  const dx = playerPos.x - redPos.x;
+  const dy = playerPos.y - redPos.y;
+  const dz = playerPos.z - redPos.z;
+  
+  const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+  
+  if (distance < 1.5 && distance > 0.01) { // Larger detection range
+    // Calculate pushback direction (away from cube)
+    const pushStrength = sceneConfig.obstacles[0].pushStrength; // MUCH stronger pushback
+    const pushX = (dx / distance) * pushStrength;
+    const pushZ = (dz / distance) * pushStrength;
+    
+    // Apply STRONG pushback
+    const currentVel = playerBody.linvel();
+    playerBody.setLinvel({
+      x: pushX,
+      y: currentVel.y,
+      z: pushZ
+    }, true);
+  }
+}
+
+// Enhanced vertical movement handling
+function handleVerticalMovement(currentVel, currentPos) {
+  let newVelY = currentVel.y;
+  
+  if (keys['Space']) {
+    if (isGrounded) {
+      newVelY = JUMP_FORCE;
+    } else if (currentPos.y < MAX_FLY_HEIGHT) {
+      newVelY = Math.max(currentVel.y, FLY_SPEED);
+    }
+  } else if (keys['ShiftLeft'] || keys['ShiftRight']) {
+    if (!isGrounded) {
+      newVelY = -FLY_SPEED;
+    }
+  }
+  
+  // Apply Y velocity
+  if (Math.abs(newVelY - currentVel.y) > 0.1) {
+    playerBody.setLinvel({ x: currentVel.x, y: newVelY, z: currentVel.z }, true);
+  }
+  
+  // Clamp Y position
+  if (currentPos.y > MAX_FLY_HEIGHT + PLAYER_HEIGHT/2) {
+    playerBody.setTranslation({ 
+      x: currentPos.x, 
+      y: MAX_FLY_HEIGHT + PLAYER_HEIGHT/2, 
+      z: currentPos.z 
+    }, true);
+    if (currentVel.y > 0) {
+      playerBody.setLinvel({ x: currentVel.x, y: 0, z: currentVel.z }, true);
+    }
+  }
+}
+
+// EMERGENCY: Force player out if somehow inside red cube
+function forcePlayerOutOfRedCube(playerPos) {
+  if (!redCubePhysics || !redCubePhysics.body) return;
+  
+  const redPos = redCubePhysics.body.translation();
+  const dx = playerPos.x - redPos.x;
+  const dy = playerPos.y - redPos.y;
+  const dz = playerPos.z - redPos.z;
+  
+  const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+  
+  // If player is inside or very close to cube center
+  if (distance < 0.5) {
+    console.log("EMERGENCY: Forcing player out of red cube!");
+    
+    // Calculate escape direction (away from cube center)
+    const escapeDistance = sceneConfig.obstacles[0].escapeDistance; // Distance to move player away
+    const escapeX = (dx / distance) * escapeDistance;
+    const escapeZ = (dz / distance) * escapeDistance;
+    
+    // Force player to safe position
+    const safeX = redPos.x + escapeX;
+    const safeZ = redPos.z + escapeZ;
+    
+    playerBody.setTranslation({
+      x: safeX,
+      y: playerPos.y,
+      z: safeZ
+    }, true);
+    
+    // Stop all movement
+    playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    velocity.x = 0;
+    velocity.z = 0;
+  }
+}
+
+// Enhanced red cube manipulation with physics sync
+function updateRedCubePhysics() {
+  if (redCubePhysics && redCubePhysics.body) {
+    // Update physics body to match visual position and rotation
+    redCubePhysics.body.setTranslation({
+      x: redCube.position.x,
+      y: redCube.position.y,
+      z: redCube.position.z
+    }, true);
+    
+    // Update rotation
+    const euler = new THREE.Euler(redCube.rotation.x, redCube.rotation.y, redCube.rotation.z, 'XYZ');
+    const quat = new THREE.Quaternion().setFromEuler(euler);
+    redCubePhysics.body.setRotation({
+      x: quat.x,
+      y: quat.y,
+      z: quat.z,
+      w: quat.w
+    }, true);
+  }
+}
+
+await initPhysics();
+
+// --- First-Person Controls & Physics Update ---
+function updatePhysics(dt) {
+  if (!playerBody || !playerCollider) return;
+  
+  // Step physics
+  rapierWorld.step();
+  
+  getMoveInput();
+
+  // Get current state
+  const currentVel = playerBody.linvel();
+  const currentPos = playerBody.translation();
+  
+  // Enhanced ground detection
+  isGrounded = checkGroundCollision(currentPos);
+  
+  // Handle crouching
+  if (keys['KeyC'] && !isCrouching && isGrounded) {
+    isCrouching = true;
+  } else if (!keys['KeyC'] && isCrouching) {
+    isCrouching = false;
+  }
+
+  // Calculate movement direction
+  const dir = new THREE.Vector3();
+  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  dir.addScaledVector(forward, moveDir.forward);
+  dir.addScaledVector(right, moveDir.right);
+  if (dir.lengthSq() > 0) dir.normalize();
+
+  // Movement speed
+  const speed = isCrouching ? CROUCH_SPEED : WALK_SPEED;
+  velocity.lerp(dir.multiplyScalar(speed), 0.2); // Slightly more responsive
+
+  // Check for collision before applying movement
+  const newX = currentPos.x + velocity.x * dt;
+  const newZ = currentPos.z + velocity.z * dt;
+  
+  // Boundary check
+  let canMove = isPointInPolygon(newX, newZ, BOUNDARY_POLYGON);
+  
+  // ENHANCED collision prediction - check if movement would cause collision
+  if (canMove) {
+    canMove = !wouldCollideWithRedCube(newX, currentPos.y, newZ);
+  }
+  
+  // ADDITIONAL: Check current position for immediate collision (emergency stop)
+  if (canMove && wouldCollideWithRedCube(currentPos.x, currentPos.y, currentPos.z)) {
+    canMove = false;
+    console.log("EMERGENCY STOP: Player inside red cube detected!");
+  }
+  
+  // Apply horizontal movement
+  if (canMove) {
+    playerBody.setLinvel({ x: velocity.x, y: currentVel.y, z: velocity.z }, true);
+  } else {
+    // Stop horizontal movement and apply STRONG pushback if colliding
+    playerBody.setLinvel({ x: 0, y: currentVel.y, z: 0 }, true);
+    applyCollisionPushback(currentPos);
+    velocity.x = 0;
+    velocity.z = 0;
+  }
+
+  // Vertical movement
+  handleVerticalMovement(currentVel, currentPos);
+  
+  // Update interaction manager
+  if (isPointerLocked) {
+    interactionManager.update(playerBody, isGrounded, isCrouching, currentVel);
+  }
+
+  // Check collisions with other physics cubes
+  checkPlayerCubeCollisions();
+  
+  // EMERGENCY: Force player out if somehow inside red cube
+  forcePlayerOutOfRedCube(currentPos);
+}
+
+// Simplified collision handling for other physics cubes (red cube handled in updatePhysics)
+function checkPlayerCubeCollisions() {
+  if (!playerBody) return;
+  const playerPos = playerBody.translation();
+  
+  // Handle other physics cubes (keep existing logic)
+  physicsCubes.forEach(cubeData => {
+    const cubePos = cubeData.mesh.position;
+    const distance = Math.sqrt(
+      Math.pow(playerPos.x - cubePos.x, 2) + 
+      Math.pow(playerPos.y - cubePos.y, 2) + 
+      Math.pow(playerPos.z - cubePos.z, 2)
+    );
+    
+    // Optional: Make cube barely visible when player is very close
+    if (distance < 0.5) {
+      if (!cubeData.mesh.userData.glowing) {
+        cubeData.mesh.userData.glowing = true;
+        // Uncomment these lines if you want a subtle hint when very close:
+        // cubeData.mesh.material.opacity = 0.1;
+        // cubeData.mesh.material.visible = true;
+      }
+    } else {
+      // Keep cube invisible when player moves away
+      if (cubeData.mesh.userData.glowing) {
+        cubeData.mesh.userData.glowing = false;
+        cubeData.mesh.material.opacity = 0;
+        cubeData.mesh.material.visible = false;
+      }
+    }
+  });
+}
+
+// Animate link cubes
+function animateLinkCubes() {
+  const time = Date.now() * 0.001;
+  linkCubes.forEach((cube, index) => {
+    // Skip animation for helloCube (first cube in array)
+    if (index === 0) return;
+    
+    if (index < linkPoints.length) {
+      // Animate only the original link cubes
+      const offset = Math.sin(time + index * 2) * 0.05;
+      cube.position.y = linkPoints[index].position[1] + offset;
+      cube.rotation.y += 0.01;
+      cube.rotation.x += 0.005;
+    }
+    // Do not animate helloCube, pillarCube, hello2Cube, etc.
+  });
+}
+
+// --- Animation Loop Update ---
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = 1/60;
+  
+  if (rapierWorld && playerBody && playerCollider) {
+    updatePhysics(dt);
+    // Sync camera to player
+    const pos = playerBody.translation();
+    if (pos) {
+      camera.position.set(
+        pos.x,
+        pos.y + (isCrouching ? CROUCH_HEIGHT/2 : PLAYER_HEIGHT/2) + CAMERA_OFFSET,
+        pos.z
+      );
+      camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    }
+  }
+  
+  // Animate link cubes
+  animateLinkCubes();
+  
+  // Update cube visuals
+  updateCubeVisuals();
+  
+  // Update interaction system (raycasting and crosshair)
+  if (interactionManager && playerBody) {
+    const currentVel = playerBody.linvel();
+    interactionManager.update(playerBody, isGrounded, isCrouching, currentVel);
+  }
+  
+  // Ensure mobile controls are shown when game is ready
+  if (mobileControls && mobileControls.isMobile) {
+    // Check if we should be in landscape mode
+    const shouldBeLandscape = window.innerWidth > window.innerHeight;
+    if (shouldBeLandscape && !mobileControls.controlsShown) {
+      console.log('Animation loop - forcing landscape mode and showing controls');
+      mobileControls.isLandscape = true;
+      mobileControls.showJoysticks();
+      mobileControls.controlsShown = true;
+      if (mobileControls.orientationMessage) {
+        mobileControls.orientationMessage.style.display = 'none';
+      }
+    }
+    
+    // Ensure canvas is visible and game is running
+    if (renderer && renderer.domElement) {
+      renderer.domElement.style.display = 'block';
+      renderer.domElement.style.visibility = 'visible';
+    }
+  }
+  
+  renderer.render(scene, camera);
+}
+// Initialize landing page workflow
+const landingPage = new LandingPage();
+
+// Don't start animation automatically - wait for user to click play
+// animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+
+
+// ADD CSS ANIMATION FOR NOTIFICATIONS
+const saveNotificationStyle = document.createElement('style');
+saveNotificationStyle.textContent = `
+  @keyframes slideInOut {
+    0% { 
+      opacity: 0; 
+      transform: translateX(100px); 
+    }
+    15% { 
+      opacity: 1; 
+      transform: translateX(0); 
+    }
+    85% { 
+      opacity: 1; 
+      transform: translateX(0); 
+    }
+    100% { 
+      opacity: 0; 
+      transform: translateX(100px); 
+    }
+  }
+`;
+document.head.appendChild(saveNotificationStyle);
+
+console.log("TRULY IMPENETRABLE red cube physics loaded - 100% solid barrier with emergency protection");
+console.log("Progressive cube interaction system loaded. Game starts with helloCube (level 0).");
+
+// Make configuration system available globally
+window.TreasureHuntConfig = {
+  // Core functions
+  loadScene,
+  updateSceneConfig,
+  exportConfig,
+  importConfig,
+  validateConfig,
+  
+  // Utility functions
+  getCurrentConfig: () => ({ ...sceneConfig }),
+  getAvailableScenes: () => Object.keys(scenes),
+  addScene: (name, config) => {
+    const validation = validateConfig(config);
+    if (!validation.isValid) {
+      throw new Error(`Invalid configuration: ${validation.errors.join(', ')}`);
+    }
+    scenes[name] = config;
+    console.log(`Scene '${name}' added to collection`);
+  },
+  
+  // Configuration helpers
+  updatePlayerPosition: (x, y, z) => {
+    updateSceneConfig({
+      sceneSettings: {
+        initialPosition: [x, y, z]
+      }
+    });
+  },
+  
+  updateCluePosition: (clueIndex, x, y, z) => {
+    const updates = { ...sceneConfig };
+    if (updates.treasureHunt.clues[clueIndex]) {
+      updates.treasureHunt.clues[clueIndex].position = [x, y, z];
+      updateSceneConfig(updates);
+    }
+  },
+  
+  updateObstaclePosition: (obstacleIndex, x, y, z) => {
+    const updates = { ...sceneConfig };
+    if (updates.obstacles[obstacleIndex]) {
+      updates.obstacles[obstacleIndex].position = [x, y, z];
+      updateSceneConfig(updates);
+    }
+  },
+  
+  // Validation helpers
+  validatePosition: (position) => {
+    return Array.isArray(position) && position.length === 3 && 
+           position.every(coord => typeof coord === 'number');
+  },
+  
+  validateScale: (scale) => {
+    return Array.isArray(scale) && scale.length === 3 && 
+           scale.every(coord => typeof coord === 'number' && coord > 0);
+  },
+  
+  // Scene management
+  createNewScene: (name, baseConfig = null) => {
+    const newConfig = baseConfig ? { ...baseConfig } : { ...sceneConfig };
+    newConfig.splat.name = name;
+    scenes[name] = newConfig;
+    console.log(`New scene '${name}' created`);
+    return newConfig;
+  },
+  
+  duplicateScene: (sourceName, newName) => {
+    if (!scenes[sourceName]) {
+      throw new Error(`Source scene '${sourceName}' not found`);
+    }
+    const duplicatedConfig = JSON.parse(JSON.stringify(scenes[sourceName]));
+    duplicatedConfig.splat.name = newName;
+    scenes[newName] = duplicatedConfig;
+    console.log(`Scene '${sourceName}' duplicated as '${newName}'`);
+    return duplicatedConfig;
+  },
+  
+  // Configuration templates
+  getDefaultConfig: () => ({
+    sceneSettings: {
+      initialPosition: [0, 0.5, 0],
+      gravity: [0, -9.81, 0],
+      groundLevel: -1.35,
+      playerHeight: 1.7,
+      crouchHeight: 1.0,
+      playerRadius: 0.3,
+      cameraOffset: 0.1,
+      maxFlyHeight: -0.6,
+      walkSpeed: 4.0,
+      crouchSpeed: 2.0,
+      jumpForce: 6.0,
+      flySpeed: 3.0,
+      mouseSensitivity: 0.002,
+      dragSensitivity: 0.01,
+      rotationSensitivity: 0.01
+    },
+    splat: {
+      name: "NewScene",
+      url: "/default.splat",
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1]
+    },
+    boundingBox: {
+      polygon: [[-5, 5], [-5, -5], [5, -5], [5, 5]]
+    },
+    treasureHunt: {
+      startMessage: "Find the hidden clues!",
+      endMessage: "Congratulations! You've completed the game!",
+      gameMode: "sequential",
+      clues: []
+    },
+    obstacles: [],
+    physics: {
+      groundCollider: {
+        size: [50, 0.1, 50],
+        position: [0, -1.45, 0]
+      },
+      playerCollider: {
+        friction: 0.1,
+        restitution: 0.1,
+        linearDamping: 5.0,
+        angularDamping: 10.0
+      },
+      cubeCollider: {
+        size: [0.125, 0.125, 0.125]
+      }
+    },
+    ui: {
+      crosshair: {
+        centerDotSize: 2,
+        lineLength: 8,
+        lineThickness: 1,
+        glowRadius: 4
+      },
+      linkCubes: {
+        size: [0.6, 0.6, 0.6],
+        glowSize: [0.7, 0.7, 0.7],
+        color: 0x00ff88,
+        opacity: 0.8,
+        glowOpacity: 0.3
+      }
+    }
+  }),
+  
+  // Debug and development helpers
+  debugConfig: () => {
+    console.log("Current Configuration:", sceneConfig);
+    console.log("Available Scenes:", Object.keys(scenes));
+    console.log("Validation Result:", validateConfig(sceneConfig));
+  },
+  
+  // Performance monitoring
+  getConfigSize: () => {
+    return JSON.stringify(sceneConfig).length;
+  },
+  
+  // Backup and restore
+  backupConfig: () => {
+    const backup = {
+      timestamp: new Date().toISOString(),
+      config: { ...sceneConfig },
+      scenes: { ...scenes }
+    };
+    localStorage.setItem('treasureHunt_backup', JSON.stringify(backup));
+    console.log("Configuration backed up to localStorage");
+    return backup;
+  },
+  
+  restoreBackup: () => {
+    const backup = localStorage.getItem('treasureHunt_backup');
+    if (backup) {
+      const data = JSON.parse(backup);
+      Object.assign(sceneConfig, data.config);
+      Object.assign(scenes, data.scenes);
+      console.log("Configuration restored from backup");
+      return data;
+    } else {
+      console.warn("No backup found in localStorage");
+      return null;
+    }
+  }
+};
+
+// Add keyboard shortcuts for configuration management
+document.addEventListener('keydown', (e) => {
+  // Ctrl+Shift+E: Export current configuration
+  if (e.ctrlKey && e.shiftKey && e.code === 'KeyE') {
+    e.preventDefault();
+    exportConfig();
+  }
+  
+  // Ctrl+Shift+I: Import configuration
+  if (e.ctrlKey && e.shiftKey && e.code === 'KeyI') {
+    e.preventDefault();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (event) => {
+      const file = event.target.files[0];
+      if (file) {
+        try {
+          await importConfig(file);
+          console.log('Configuration imported successfully');
+        } catch (error) {
+          console.error('Import failed:', error);
+        }
+      }
+    };
+    input.click();
+  }
+  
+  // Ctrl+Shift+D: Debug configuration
+  if (e.ctrlKey && e.shiftKey && e.code === 'KeyD') {
+    e.preventDefault();
+    window.TreasureHuntConfig.debugConfig();
+  }
+  
+  // Ctrl+Shift+B: Backup configuration
+  if (e.ctrlKey && e.shiftKey && e.code === 'KeyB') {
+    e.preventDefault();
+    window.TreasureHuntConfig.backupConfig();
+  }
+  
+  // Ctrl+Shift+R: Restore configuration
+  if (e.ctrlKey && e.shiftKey && e.code === 'KeyR') {
+    e.preventDefault();
+    window.TreasureHuntConfig.restoreBackup();
+  }
+});
+
+console.log("Configuration system loaded. Use window.TreasureHuntConfig for configuration management.");
+console.log("Keyboard shortcuts: Ctrl+Shift+E (Export), Ctrl+Shift+I (Import), Ctrl+Shift+D (Debug), Ctrl+Shift+B (Backup), Ctrl+Shift+R (Restore)");
+
+function debugPositions() {
+  if (playerBody) {
+    const pos = playerBody.translation();
+    console.log("=== POSITION DEBUG ===");
+    console.log(`Config spawn position: [${sceneConfig.sceneSettings.initialPosition.join(', ')}]`);
+    console.log(`Actual player position: [${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)}]`);
+    console.log(`Ground level: ${sceneConfig.sceneSettings.groundLevel}`);
+    console.log(`Distance above ground: ${(pos.y - sceneConfig.sceneSettings.groundLevel).toFixed(3)}`);
+    console.log(`Player height: ${PLAYER_HEIGHT}`);
+    console.log(`Player radius: ${PLAYER_RADIUS}`);
+    console.log("======================");
+  }
+}

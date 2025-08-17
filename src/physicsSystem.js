@@ -82,6 +82,12 @@ class PhysicsSystem {
     if (!this.isInitialized) return;
 
     try {
+      // Handle movement input
+      this.handleMovement(dt);
+      
+      // Handle vertical movement
+      this.handleVerticalMovement(dt);
+      
       // Apply gravity
       this.playerAcceleration.y = this.gravity;
       
@@ -101,39 +107,175 @@ class PhysicsSystem {
         z: this.playerPosition.z + this.playerVelocity.z * dt
       };
       
-      // Check collisions
-      const collisionResult = this.checkCollisions(newPosition);
+      // Check red cube collision before applying movement
+      if (this.wouldCollideWithRedCube(newPosition.x, newPosition.y, newPosition.z)) {
+        console.log('RED CUBE COLLISION DETECTED!');
+        // Stop horizontal movement and apply pushback
+        this.playerVelocity.x = 0;
+        this.playerVelocity.z = 0;
+        this.applyCollisionPushback();
+      } else {
+        // Apply movement if no collision
+        this.playerPosition = newPosition;
+      }
       
-      // Update position based on collision result
+      // Check boundary collisions
+      const collisionResult = this.checkCollisions(this.playerPosition);
       this.playerPosition = collisionResult.position;
       
-      // Update grounded state
-      this.isGrounded = this.checkGroundCollision();
+      // Ground collision
+      if (this.playerPosition.y <= this.groundLevel + window.PLAYER_RADIUS) {
+        this.playerPosition.y = this.groundLevel + window.PLAYER_RADIUS;
+        this.playerVelocity.y = 0;
+        this.isGrounded = true;
+      } else {
+        this.isGrounded = false;
+      }
       
       // Handle crouching
       this.handleCrouching();
       
-      // Handle movement input
-      this.handleMovement(dt);
+      // Update global state
+      window.isGrounded = this.isGrounded;
       
-      // Handle vertical movement
-      this.handleVerticalMovement(dt);
-      
-      // Apply collision pushback
-      this.applyCollisionPushback();
-      
-      // Emergency player protection
+      // Emergency: Force player out if somehow inside red cube
       this.forcePlayerOutOfRedCube();
       
       // Update camera position
       this.updateCamera();
       
-      // Update global state
-      window.isGrounded = this.isGrounded;
-      
     } catch (error) {
       console.error('Physics update error:', error);
     }
+  }
+
+  // Red cube collision detection
+  wouldCollideWithRedCube(newX, newY, newZ) {
+    if (!window.redCube || !window.redCube.userData) return false;
+    
+    const redPos = window.redCube.position;
+    const dx = newX - redPos.x;
+    const dy = newY - redPos.y;
+    const dz = newZ - redPos.z;
+    
+    // Calculate distance to cube center
+    const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    
+    // Check if player would be too close to cube (MUCH larger safety margin)
+    const cubeRadius = window.redCube.userData.physicsRadius || 0.85;
+    const playerRadius = window.PLAYER_RADIUS;
+    const safeDistance = cubeRadius + playerRadius + 0.5; // Increased safety margin for better detection
+    
+    // Debug logging for collision detection
+    if (distance < safeDistance + 0.5) { // Log when getting close
+      console.log('Collision check:', {
+        distance: distance.toFixed(3),
+        safeDistance: safeDistance.toFixed(3),
+        cubeRadius: cubeRadius,
+        playerRadius: playerRadius,
+        willCollide: distance < safeDistance,
+        newPos: { x: newX.toFixed(3), y: newY.toFixed(3), z: newZ.toFixed(3) },
+        redCubePos: { x: redPos.x.toFixed(3), y: redPos.y.toFixed(3), z: redPos.z.toFixed(3) }
+      });
+    }
+    
+    return distance < safeDistance;
+  }
+
+  // Apply STRONG pushback when collision detected
+  applyCollisionPushback() {
+    if (!window.redCube || !window.redCube.userData) return;
+    
+    const redPos = window.redCube.position;
+    const dx = this.playerPosition.x - redPos.x;
+    const dy = this.playerPosition.y - redPos.y;
+    const dz = this.playerPosition.z - redPos.z;
+    
+    const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    
+    if (distance < 1.5 && distance > 0.01) { // Larger detection range
+      // Calculate pushback direction (away from cube)
+      const pushStrength = window.redCube.userData.pushStrength || 5.0;
+      const pushX = (dx / distance) * pushStrength;
+      const pushZ = (dz / distance) * pushStrength;
+      
+      // Add bounce effect - increase pushback strength for more bounce
+      const bounceMultiplier = 3.0; // Much stronger bounce effect
+      const bounceX = pushX * bounceMultiplier;
+      const bounceZ = pushZ * bounceMultiplier;
+      
+      // Apply STRONG pushback with bounce
+      this.playerVelocity.x = bounceX;
+      this.playerVelocity.z = bounceZ;
+      
+      // Debug logging
+      console.log('BOUNCE EFFECT APPLIED:', {
+        distance: distance.toFixed(3),
+        pushStrength: pushStrength,
+        bounceMultiplier: bounceMultiplier,
+        bounceX: bounceX.toFixed(3),
+        bounceZ: bounceZ.toFixed(3),
+        playerPos: { x: this.playerPosition.x.toFixed(3), z: this.playerPosition.z.toFixed(3) },
+        redCubePos: { x: redPos.x.toFixed(3), z: redPos.z.toFixed(3) }
+      });
+    }
+  }
+
+  // EMERGENCY: Force player out if somehow inside red cube
+  forcePlayerOutOfRedCube() {
+    if (!window.redCube || !window.redCube.userData) return;
+    
+    const redPos = window.redCube.position;
+    const dx = this.playerPosition.x - redPos.x;
+    const dy = this.playerPosition.y - redPos.y;
+    const dz = this.playerPosition.z - redPos.z;
+    
+    const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    
+    // If player is inside or very close to cube center
+    if (distance < 0.5) {
+      console.log("EMERGENCY: Forcing player out of red cube!");
+      
+      // Calculate escape direction (away from cube center)
+      const escapeDistance = window.redCube.userData.escapeDistance || 1.0;
+      const escapeX = (dx / distance) * escapeDistance;
+      const escapeZ = (dz / distance) * escapeDistance;
+      
+      // Force player to safe position
+      const safeX = redPos.x + escapeX;
+      const safeZ = redPos.z + escapeZ;
+      
+      this.playerPosition.x = safeX;
+      this.playerPosition.z = safeZ;
+      
+      // Stop all movement
+      this.playerVelocity.x = 0;
+      this.playerVelocity.z = 0;
+    }
+  }
+
+  // Update red cube physics (for manipulation)
+  updateRedCubePhysics(redCube) {
+    if (!redCube || !redCube.userData) return;
+    
+    // Update the red cube position in physics system
+    this.redCubePosition = {
+      x: redCube.position.x,
+      y: redCube.position.y,
+      z: redCube.position.z
+    };
+    
+    console.log('Red cube physics updated:', this.redCubePosition);
+  }
+
+  // Set player position (for emergency situations)
+  setPlayerPosition(position) {
+    this.playerPosition = { ...position };
+  }
+
+  // Set player velocity (for pushback)
+  setPlayerVelocity(velocity) {
+    this.playerVelocity = { ...velocity };
   }
 
   checkCollisions(newPosition) {
@@ -300,29 +442,6 @@ class PhysicsSystem {
       if (this.playerVelocity.y > 0) {
         this.playerVelocity.y = 0;
       }
-    }
-  }
-
-  applyCollisionPushback() {
-    // This is handled in checkRedCubeCollision
-  }
-
-  forcePlayerOutOfRedCube() {
-    const dx = this.playerPosition.x - this.redCubePosition.x;
-    const dy = this.playerPosition.y - this.redCubePosition.y;
-    const dz = this.playerPosition.z - this.redCubePosition.z;
-    
-    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    
-    if (distance < 0.5) {
-      const escapeDistance = 2.0;
-      const escapeX = (dx / distance) * escapeDistance;
-      const escapeZ = (dz / distance) * escapeDistance;
-      
-      this.playerPosition.x = this.redCubePosition.x + escapeX;
-      this.playerPosition.z = this.redCubePosition.z + escapeZ;
-      this.playerVelocity.x = 0;
-      this.playerVelocity.z = 0;
     }
   }
 
