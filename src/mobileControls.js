@@ -163,9 +163,6 @@ class MobileControls {
     this.isLandscape = false;
     this.joysticks = {};
     this.orientationMessage = null;
-    this.cameraTouchActive = false;
-    this.lastTouchX = 0;
-    this.lastTouchY = 0;
     this.controlsShown = false;
     
     if (this.isMobile) {
@@ -251,7 +248,7 @@ class MobileControls {
   }
   
   createJoysticks() {
-    // Movement joystick (left side only) - Bigger size for better mobile control
+    // Movement joystick (left side) - Bigger size for better mobile control
     this.joysticks.movement = new MobileJoystick(document.body, {
       size: 120,
       color: '#4CAF50',
@@ -259,83 +256,31 @@ class MobileControls {
       borderColor: 'rgba(76, 175, 80, 0.6)'
     });
     
+    // Camera joystick (right side) - For camera movement
+    this.joysticks.camera = new MobileJoystick(document.body, {
+      size: 120,
+      color: '#2196F3',
+      backgroundColor: 'rgba(33, 150, 243, 0.3)',
+      borderColor: 'rgba(33, 150, 243, 0.6)'
+    });
+    
     this.positionJoysticks();
-    this.setupTouchCamera();
-  }
-  
-  setupTouchCamera() {
-    // Add touch camera controls to the canvas
-    const canvas = this.renderer.domElement;
-    
-    canvas.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 1) {
-        // Check if touching an interactive object first
-        const touch = e.touches[0];
-        const mouse = new THREE.Vector2();
-        mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
-        mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
-        
-        const raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(mouse, this.camera);
-        const intersects = raycaster.intersectObjects(this.scene.children, true);
-        
-        // Only start camera movement if not touching an interactive object
-        if (intersects.length === 0 || !this.isInteractiveObject(intersects[0].object)) {
-          this.cameraTouchActive = true;
-          this.lastTouchX = touch.clientX;
-          this.lastTouchY = touch.clientY;
-        }
-      }
-    }, { passive: false });
-    
-    canvas.addEventListener('touchmove', (e) => {
-      if (this.cameraTouchActive && e.touches.length === 1) {
-        e.preventDefault();
-        const touch = e.touches[0];
-        const deltaX = touch.clientX - this.lastTouchX;
-        const deltaY = touch.clientY - this.lastTouchY;
-        
-        const sensitivity = this.sceneConfig.sceneSettings.mouseSensitivity * 2;
-        // Update global yaw and pitch variables
-        if (window.yaw !== undefined && window.pitch !== undefined) {
-          window.yaw -= deltaX * sensitivity;
-          window.pitch -= deltaY * sensitivity;
-          window.pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, window.pitch));
-        }
-        
-        this.lastTouchX = touch.clientX;
-        this.lastTouchY = touch.clientY;
-      }
-    }, { passive: false });
-    
-    canvas.addEventListener('touchend', (e) => {
-      this.cameraTouchActive = false;
-    }, { passive: false });
-  }
-  
-  isInteractiveObject(object) {
-    // Check if the object is interactive (clue cubes, etc.)
-    return object.userData && (
-      object.userData.isClueCube || 
-      object.userData.isNewCube || 
-      object.userData.isInteractive ||
-      object.name === 'helloCube' ||
-      object.name === 'newCube' ||
-      object.name === 'anotherCube2'
-    );
+    this.createFullscreenButton();
   }
   
   positionJoysticks() {
     const margin = 30;
     
-    // Movement joystick (bottom left) - adjusted for bigger size
+    // Movement joystick (bottom left)
     this.joysticks.movement.element.style.left = `${margin}px`;
     this.joysticks.movement.element.style.bottom = `${margin}px`;
     
-    // Add labels and buttons
+    // Camera joystick (bottom right)
+    this.joysticks.camera.element.style.right = `${margin}px`;
+    this.joysticks.camera.element.style.bottom = `${margin}px`;
+    
+    // Add labels
     this.addJoystickLabels();
-    this.createActionButtons();
-    this.createFullscreenButton();
   }
   
   addJoystickLabels() {
@@ -353,103 +298,21 @@ class MobileControls {
       z-index: 1000;
     `;
     document.body.appendChild(movementLabel);
-  }
-  
-  createActionButtons() {
-    // Jump button (bigger and more responsive)
-    this.jumpButton = document.createElement('div');
-    this.jumpButton.textContent = '↑';
-    this.jumpButton.style.cssText = `
+    
+    // Camera label
+    const cameraLabel = document.createElement('div');
+    cameraLabel.textContent = 'CAMERA';
+    cameraLabel.style.cssText = `
       position: absolute;
-      right: 20px;
-      bottom: 20px;
-      width: 65px;
-      height: 65px;
-      background: linear-gradient(135deg, #FF6B6B, #FF8E53);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
+      right: 30px;
+      bottom: 160px;
+      color: #2196F3;
       font-family: 'Poppins', sans-serif;
-      font-size: 24px;
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 500;
       z-index: 1000;
-      touch-action: none;
-      user-select: none;
-      box-shadow: 0 4px 12px rgba(255, 107, 107, 0.5);
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
-      border: 2px solid rgba(255, 255, 255, 0.2);
     `;
-    
-    // Crouch button (bigger and more responsive)
-    this.crouchButton = document.createElement('div');
-    this.crouchButton.textContent = '↓';
-    this.crouchButton.style.cssText = `
-      position: absolute;
-      right: 100px;
-      bottom: 20px;
-      width: 65px;
-      height: 65px;
-      background: linear-gradient(135deg, #9C27B0, #673AB7);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-family: 'Poppins', sans-serif;
-      font-size: 24px;
-      font-weight: 600;
-      z-index: 1000;
-      touch-action: none;
-      user-select: none;
-      box-shadow: 0 4px 12px rgba(156, 39, 176, 0.5);
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
-      border: 2px solid rgba(255, 255, 255, 0.2);
-    `;
-    
-    // Add touch events for jump button (more responsive)
-    this.jumpButton.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      this.jumpButton.style.transform = 'scale(0.9)';
-      this.jumpButton.style.boxShadow = '0 6px 16px rgba(255, 107, 107, 0.7)';
-      // Trigger jump
-      if (window.isGrounded && !window.isCrouching && window.playerBody) {
-        const jumpForce = this.sceneConfig.sceneSettings.jumpForce;
-        window.playerBody.applyImpulse({ x: 0, y: jumpForce, z: 0 }, true);
-      }
-    }, { passive: false });
-    
-    this.jumpButton.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      this.jumpButton.style.transform = 'scale(1)';
-      this.jumpButton.style.boxShadow = '0 4px 12px rgba(255, 107, 107, 0.5)';
-    }, { passive: false });
-    
-    // Add touch events for crouch button (more responsive)
-    this.crouchButton.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      this.crouchButton.style.transform = 'scale(0.9)';
-      this.crouchButton.style.boxShadow = '0 6px 16px rgba(156, 39, 176, 0.7)';
-      // Toggle crouch
-      if (window.isCrouching !== undefined) {
-        window.isCrouching = !window.isCrouching;
-        if (window.isCrouching) {
-          this.crouchButton.style.background = 'linear-gradient(135deg, #FF9800, #FF5722)';
-        } else {
-          this.crouchButton.style.background = 'linear-gradient(135deg, #9C27B0, #673AB7)';
-        }
-      }
-    }, { passive: false });
-    
-    this.crouchButton.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      this.crouchButton.style.transform = 'scale(1)';
-      this.crouchButton.style.boxShadow = '0 4px 12px rgba(156, 39, 176, 0.5)';
-    }, { passive: false });
-    
-    document.body.appendChild(this.jumpButton);
-    document.body.appendChild(this.crouchButton);
+    document.body.appendChild(cameraLabel);
   }
   
   createFullscreenButton() {
@@ -553,30 +416,24 @@ class MobileControls {
   showJoysticks() {
     if (this.joysticks.movement) {
       this.joysticks.movement.element.style.display = 'flex';
-      if (this.jumpButton) {
-        this.jumpButton.style.display = 'flex';
-      }
-      if (this.crouchButton) {
-        this.crouchButton.style.display = 'flex';
-      }
-      if (this.fullscreenButton) {
-        this.fullscreenButton.style.display = 'flex';
-      }
+    }
+    if (this.joysticks.camera) {
+      this.joysticks.camera.element.style.display = 'flex';
+    }
+    if (this.fullscreenButton) {
+      this.fullscreenButton.style.display = 'flex';
     }
   }
   
   hideJoysticks() {
     if (this.joysticks.movement) {
       this.joysticks.movement.element.style.display = 'none';
-      if (this.jumpButton) {
-        this.jumpButton.style.display = 'none';
-      }
-      if (this.crouchButton) {
-        this.crouchButton.style.display = 'none';
-      }
-      if (this.fullscreenButton) {
-        this.fullscreenButton.style.display = 'none';
-      }
+    }
+    if (this.joysticks.camera) {
+      this.joysticks.camera.element.style.display = 'none';
+    }
+    if (this.fullscreenButton) {
+      this.fullscreenButton.style.display = 'none';
     }
   }
   
@@ -587,21 +444,25 @@ class MobileControls {
     return this.joysticks.movement.getValues();
   }
   
+  getCameraInput() {
+    if (!this.isMobile || !this.isLandscape || !this.joysticks.camera) {
+      return { x: 0, y: 0 };
+    }
+    return this.joysticks.camera.getValues();
+  }
+  
   destroy() {
     if (this.orientationMessage) {
       this.orientationMessage.remove();
-    }
-    if (this.jumpButton) {
-      this.jumpButton.remove();
-    }
-    if (this.crouchButton) {
-      this.crouchButton.remove();
     }
     if (this.fullscreenButton) {
       this.fullscreenButton.remove();
     }
     if (this.joysticks.movement) {
       this.joysticks.movement.destroy();
+    }
+    if (this.joysticks.camera) {
+      this.joysticks.camera.destroy();
     }
   }
 }

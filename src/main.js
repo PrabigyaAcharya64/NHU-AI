@@ -859,6 +859,10 @@ function getMoveInput() {
         // Override keyboard input with joystick input on mobile
         window.moveDir.forward = mobileInput.y;
         window.moveDir.right = mobileInput.x;
+        
+        // Store camera input for physics system to handle
+        const cameraInput = mobileControls.getCameraInput();
+        window.mobileCameraInput = cameraInput;
       } catch (mobileInputError) {
         console.warn('Mobile input error:', mobileInputError);
       }

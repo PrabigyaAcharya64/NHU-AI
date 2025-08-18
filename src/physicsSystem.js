@@ -188,6 +188,9 @@ class PhysicsSystem {
       // Handle movement input
       this.handleMovement(dt);
       
+      // Handle camera joystick input for mobile
+      this.handleCameraJoystick(dt);
+      
       // Handle vertical movement
       this.handleVerticalMovement(dt);
       
@@ -471,6 +474,21 @@ class PhysicsSystem {
       // Stop horizontal movement
       this.playerVelocity.x = 0;
       this.playerVelocity.z = 0;
+    }
+  }
+
+  handleCameraJoystick(dt) {
+    // Handle mobile camera joystick input
+    if (window.mobileCameraInput && (window.mobileCameraInput.x !== 0 || window.mobileCameraInput.y !== 0)) {
+      const sensitivity = window.sceneConfig ? window.sceneConfig.sceneSettings.mouseSensitivity * 2 : 0.002;
+      const cameraSpeed = sensitivity * dt * 60; // Adjust for frame rate
+      
+      // Update yaw and pitch based on joystick input
+      if (window.yaw !== undefined && window.pitch !== undefined) {
+        window.yaw -= window.mobileCameraInput.x * cameraSpeed;
+        window.pitch -= window.mobileCameraInput.y * cameraSpeed;
+        window.pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, window.pitch));
+      }
     }
   }
 
