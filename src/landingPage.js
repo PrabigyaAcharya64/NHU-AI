@@ -29,6 +29,81 @@ function loadAssetWithFallback(primaryPath, fallbackPath = null, type = 'image')
   });
 }
 
+// --- VIDEO LOADING UTILITY FOR VERCEL ---
+function createVideoLoader() {
+  const videoPaths = [
+    '/Adobe Express - IQWPE3043 (1).mp4',
+    './Adobe Express - IQWPE3043 (1).mp4',
+    '/Adobe_Express_IQWPE3043.mp4',
+    './Adobe_Express_IQWPE3043.mp4',
+    '/background-video.mp4',
+    './background-video.mp4',
+    '/Untitled video - Made with Clipchamp (1).mp4',
+    './Untitled video - Made with Clipchamp (1).mp4',
+    '/background.mp4',
+    './background.mp4',
+    // Add more fallback paths for Vercel
+    '/assets/Adobe Express - IQWPE3043 (1).mp4',
+    './assets/Adobe Express - IQWPE3043 (1).mp4'
+  ];
+
+  return {
+    async loadVideo(videoElement, onSuccess, onError) {
+      let currentIndex = 0;
+      
+      const tryNextVideo = () => {
+        if (currentIndex >= videoPaths.length) {
+          console.log('All video paths failed, using gradient background');
+          onError && onError(new Error('All video paths failed'));
+          return;
+        }
+
+        const videoPath = videoPaths[currentIndex];
+        console.log(`Trying to load video: ${videoPath}`);
+
+        // Clear existing sources
+        videoElement.innerHTML = '';
+        
+        const source = document.createElement('source');
+        source.src = videoPath;
+        source.type = 'video/mp4';
+        
+        // Add error handling for source
+        source.onerror = () => {
+          console.error(`Source error for: ${videoPath}`);
+          currentIndex++;
+          tryNextVideo();
+        };
+        
+        videoElement.appendChild(source);
+        videoElement.load();
+        
+        // Set up success handler
+        const onLoadedData = () => {
+          console.log(`Video loaded successfully: ${videoPath}`);
+          videoElement.removeEventListener('loadeddata', onLoadedData);
+          videoElement.removeEventListener('error', onVideoError);
+          onSuccess && onSuccess(videoElement);
+        };
+        
+        // Set up error handler
+        const onVideoError = (e) => {
+          console.error(`Video error for ${videoPath}:`, e);
+          videoElement.removeEventListener('loadeddata', onLoadedData);
+          videoElement.removeEventListener('error', onVideoError);
+          currentIndex++;
+          tryNextVideo();
+        };
+        
+        videoElement.addEventListener('loadeddata', onLoadedData);
+        videoElement.addEventListener('error', onVideoError);
+      };
+      
+      tryNextVideo();
+    }
+  };
+}
+
 class LandingPage {
   constructor() {
     this.isVisible = true;
@@ -255,90 +330,52 @@ class LandingPage {
     backgroundVideo.preload = 'metadata';
     backgroundVideo.crossOrigin = 'anonymous';
     
-    // List of possible video paths to try
-    const videoPaths = [
-      './Adobe Express - IQWPE3043 (1).mp4',
-      './Adobe_Express_IQWPE3043.mp4',
-      './background-video.mp4',
-      './Untitled video - Made with Clipchamp (1).mp4',
-      './background.mp4'
-    ];
-
-    let currentVideoIndex = 0;
-
-    const tryLoadVideo = (index) => {
-      if (index >= videoPaths.length) {
-        console.log('All video paths failed, using gradient background');
-        // Keep the gradient background visible
-        return;
-      }
-
-      const videoPath = videoPaths[index];
-      console.log(`Trying to load video: ${videoPath}`);
-
-      // Clear any existing sources
-      backgroundVideo.innerHTML = '';
-      
-      const videoSource = document.createElement('source');
-      videoSource.src = videoPath;
-      videoSource.type = 'video/mp4';
-      
-      backgroundVideo.appendChild(videoSource);
-      
-      // Force reload
-      backgroundVideo.load();
-    };
-
-    // Handle video loading success
-    backgroundVideo.addEventListener('loadeddata', () => {
-      console.log('Video loaded successfully');
-      
-      // Check if device is mobile
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      
-      const playVideo = () => {
-        backgroundVideo.play()
-          .then(() => {
-            console.log('Video playing successfully');
-            // Fade in the video
-            backgroundVideo.style.transition = 'opacity 1s ease-in-out';
-            backgroundVideo.style.opacity = '0.95';
-          })
-          .catch(error => {
-            console.log('Video play failed:', error);
-          });
-      };
-
-      if (isMobile) {
-        // On mobile, wait for user interaction
-        const playVideoOnInteraction = () => {
-          playVideo();
-          document.removeEventListener('touchstart', playVideoOnInteraction);
-          document.removeEventListener('click', playVideoOnInteraction);
-        };
-        
-        document.addEventListener('touchstart', playVideoOnInteraction, { passive: true });
-        document.addEventListener('click', playVideoOnInteraction, { passive: true });
-      } else {
-        // On desktop, try autoplay immediately
-        playVideo();
-      }
-    });
+    // Use the new video loader utility
+    const videoLoader = createVideoLoader();
     
-    // Handle video loading errors
-    backgroundVideo.addEventListener('error', (e) => {
-      console.error(`Video loading error for ${videoPaths[currentVideoIndex]}:`, e);
-      currentVideoIndex++;
-      tryLoadVideo(currentVideoIndex);
-    });
+    videoLoader.loadVideo(
+      backgroundVideo,
+      // Success callback
+      (videoElement) => {
+        console.log('Video loaded successfully');
+        
+        // Check if device is mobile
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        const playVideo = () => {
+          videoElement.play()
+            .then(() => {
+              console.log('Video playing successfully');
+              // Fade in the video
+              videoElement.style.transition = 'opacity 1s ease-in-out';
+              videoElement.style.opacity = '0.95';
+            })
+            .catch(error => {
+              console.log('Video play failed:', error);
+            });
+        };
 
-    // Handle source errors
-    backgroundVideo.addEventListener('loadstart', () => {
-      console.log(`Loading video: ${videoPaths[currentVideoIndex]}`);
-    });
-
-    // Start trying to load the first video
-    tryLoadVideo(currentVideoIndex);
+        if (isMobile) {
+          // On mobile, wait for user interaction
+          const playVideoOnInteraction = () => {
+            playVideo();
+            document.removeEventListener('touchstart', playVideoOnInteraction);
+            document.removeEventListener('click', playVideoOnInteraction);
+          };
+          
+          document.addEventListener('touchstart', playVideoOnInteraction, { passive: true });
+          document.addEventListener('click', playVideoOnInteraction, { passive: true });
+        } else {
+          // On desktop, try autoplay immediately
+          playVideo();
+        }
+      },
+      // Error callback
+      (error) => {
+        console.log('All video loading attempts failed, using gradient background');
+        // The gradient background will remain visible
+      }
+    );
 
     // Top logo
     const topLogo = document.createElement('img');

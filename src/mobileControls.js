@@ -463,20 +463,15 @@ class MobileJoystick {
          // Adjust sensitivity for mobile (higher sensitivity)
          const sensitivity = this.sceneConfig.sceneSettings.mouseSensitivity * 3; // Increased sensitivity
          
-         // Update global camera rotation variables
-         if (typeof window.yaw !== 'undefined' && typeof window.pitch !== 'undefined') {
-           window.yaw -= deltaX * sensitivity;
-           window.pitch -= deltaY * sensitivity;
-           
-           // Clamp pitch to prevent over-rotation
-           window.pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, window.pitch));
-           
-           // Update global references
-           if (typeof yaw !== 'undefined' && typeof pitch !== 'undefined') {
-             yaw = window.yaw;
-             pitch = window.pitch;
-           }
-         }
+                   // Update camera rotation - try multiple approaches
+          if (typeof window.updateCameraRotation === 'function') {
+            window.updateCameraRotation(-deltaX * sensitivity, -deltaY * sensitivity);
+          } else if (this.camera) {
+            // Direct camera rotation
+            this.camera.rotation.y -= deltaX * sensitivity;
+            this.camera.rotation.x -= deltaY * sensitivity;
+            this.camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.camera.rotation.x));
+          }
          
          // Update last touch position
          this.lastTouchX = cameraTouch.clientX;
