@@ -634,6 +634,11 @@ async function initializeSystems() {
     raycastManager = new RaycastManager(camera, scene);
     hudManager = new HUDManager();
     interactionManager = new InteractionManager(raycastManager, hudManager);
+    
+    // Update mobile controls with the managers
+    if (mobileControls && mobileControls.updateManagers) {
+      mobileControls.updateManagers(raycastManager, physicsSystem, interactionManager);
+    }
 
     // Create crosshair
     crosshair = createCrosshair(sceneConfig);
