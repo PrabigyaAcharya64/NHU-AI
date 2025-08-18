@@ -214,6 +214,10 @@ async function init(loadingScreen = null) {
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(2.842, 2.2, 4.702);
 
+    // Initialize global yaw and pitch variables
+    window.yaw = yaw;
+    window.pitch = pitch;
+
     // Create renderer
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -752,12 +756,10 @@ function setupEventListeners() {
     }
   });
 
-  // Mobile touch interaction
+  // Mobile touch interaction (improved version)
   document.addEventListener('touchstart', (e) => {
     // Only handle touch if it's a mobile device and not touching joysticks
     if (mobileControls && mobileControls.isMobile && mobileControls.isLandscape) {
-      e.preventDefault();
-      
       // Check if touch is on a joystick or UI element
       const touch = e.touches[0];
       const target = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -772,29 +774,13 @@ function setupEventListeners() {
         target.style.zIndex ||
         target.tagName === 'BUTTON'
       )) {
-        return;
+        return; // Let the joystick/UI handle this touch
       }
       
-      try {
-        // Update mouse position for raycasting
-        const rect = renderer.domElement.getBoundingClientRect();
-        const mouseX = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
-        const mouseY = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
-        
-        // Update raycast manager mouse position
-        if (raycastManager && raycastManager.mouse) {
-          raycastManager.mouse.set(mouseX, mouseY);
-        }
-        
-        // Perform interaction
-        const hitInfo = raycastManager.update();
-        const playerPos = physicsSystem ? physicsSystem.getPlayerPosition() : { x: 0, y: 0, z: 0 };
-        interactionManager.handleClick(hitInfo, playerPos);
-      } catch (error) {
-        console.warn('Touch interaction error:', error);
-      }
+      // If touching the canvas area, let the setupTouchCamera handle it
+      // Don't prevent default here to avoid conflicts
     }
-  }, { passive: false });
+  }, { passive: true }); // Changed to passive: true
 
 
 

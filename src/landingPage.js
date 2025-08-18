@@ -247,7 +247,7 @@ class LandingPage {
     // Create source element for the video
     const videoSource = document.createElement('source');
     // Use encodeURIComponent to handle spaces and special characters in filename
-    videoSource.src = encodeURI('/Adobe Express - IQWPE3043 (1).mp4');
+    videoSource.src = encodeURI('./Adobe Express - IQWPE3043 (1).mp4');
     videoSource.type = 'video/mp4';
     
     // Add fallback text for browsers that don't support video
@@ -290,7 +290,7 @@ class LandingPage {
       // Try alternative video path if first one fails
       if (videoSource.src.includes('Adobe Express')) {
         console.log('Trying alternative video path...');
-        videoSource.src = encodeURI('/Untitled video - Made with Clipchamp (1).mp4.gif');
+        videoSource.src = encodeURI('./Untitled video - Made with Clipchamp (1).mp4.gif');
         videoSource.type = 'video/mp4';
       } else {
         // Final fallback to a solid color background
@@ -335,7 +335,7 @@ class LandingPage {
 
     // Top logo
     const topLogo = document.createElement('img');
-    topLogo.src = encodeURI('/Asset 9@4x-8.png');
+    topLogo.src = encodeURI('./Asset 9@4x-8.png');
     topLogo.alt = 'Logo';
     topLogo.className = 'top-logo';
     
@@ -523,7 +523,7 @@ class LandingPage {
     `;
 
     const image1 = document.createElement('img');
-    image1.src = '/pic1.jpg';
+    image1.src = './pic1.jpg';
     image1.alt = 'Keshav Narayan Chowk';
     
     // Handle image1 loading error
@@ -540,7 +540,7 @@ class LandingPage {
     `;
 
     const image2 = document.createElement('img');
-    image2.src = '/pic2.webp';
+    image2.src = './pic2.webp';
     image2.alt = 'Patan Durbar Square';
     
     // Handle image2 loading error

@@ -346,49 +346,115 @@ class MobileControls {
     // Add touch camera controls to the canvas
     const canvas = this.renderer.domElement;
     
+    // Variables to track touch state
+    let isTouchingForCamera = false;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let lastTouchTime = 0;
+    
     canvas.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
-        // Check if touching an interactive object first
         const touch = e.touches[0];
-        const mouse = new THREE.Vector2();
-        mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
-        mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+        const currentTime = Date.now();
         
-        const raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(mouse, this.camera);
-        const intersects = raycaster.intersectObjects(this.scene.children, true);
-        
-        // Only start camera movement if not touching an interactive object
-        if (intersects.length === 0 || !this.isInteractiveObject(intersects[0].object)) {
-          this.cameraTouchActive = true;
-          this.lastTouchX = touch.clientX;
-          this.lastTouchY = touch.clientY;
+        // Check if touching a UI element or joystick
+        const target = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (target && (
+          target.closest('.joystick') || 
+          target.closest('#crosshair') ||
+          target.textContent === 'MOVE' ||
+          target.style.zIndex > 1000
+        )) {
+          return; // Don't handle camera if touching UI
         }
+        
+        // Start camera touch tracking
+        isTouchingForCamera = true;
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        this.lastTouchX = touch.clientX;
+        this.lastTouchY = touch.clientY;
+        lastTouchTime = currentTime;
+        
+        // Prevent default to avoid conflicts
+        e.preventDefault();
       }
     }, { passive: false });
     
     canvas.addEventListener('touchmove', (e) => {
-      if (this.cameraTouchActive && e.touches.length === 1) {
+      if (isTouchingForCamera && e.touches.length === 1) {
         e.preventDefault();
+        
         const touch = e.touches[0];
         const deltaX = touch.clientX - this.lastTouchX;
         const deltaY = touch.clientY - this.lastTouchY;
         
-        const sensitivity = this.sceneConfig.sceneSettings.mouseSensitivity * 2;
-        // Update global yaw and pitch variables
-        if (window.yaw !== undefined && window.pitch !== undefined) {
+        // Adjust sensitivity for mobile (higher sensitivity)
+        const sensitivity = this.sceneConfig.sceneSettings.mouseSensitivity * 3; // Increased sensitivity
+        
+        // Update global camera rotation variables
+        if (typeof window.yaw !== 'undefined' && typeof window.pitch !== 'undefined') {
           window.yaw -= deltaX * sensitivity;
           window.pitch -= deltaY * sensitivity;
+          
+          // Clamp pitch to prevent over-rotation
           window.pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, window.pitch));
+          
+          // Update global references
+          if (typeof yaw !== 'undefined' && typeof pitch !== 'undefined') {
+            yaw = window.yaw;
+            pitch = window.pitch;
+          }
         }
         
+        // Update last touch position
         this.lastTouchX = touch.clientX;
         this.lastTouchY = touch.clientY;
       }
     }, { passive: false });
     
     canvas.addEventListener('touchend', (e) => {
-      this.cameraTouchActive = false;
+      if (isTouchingForCamera) {
+        const currentTime = Date.now();
+        const touchDuration = currentTime - lastTouchTime;
+        const touch = e.changedTouches[0];
+        const totalDeltaX = Math.abs(touch.clientX - touchStartX);
+        const totalDeltaY = Math.abs(touch.clientY - touchStartY);
+        
+        // If it was a short tap with minimal movement, treat as click
+        if (touchDuration < 200 && totalDeltaX < 20 && totalDeltaY < 20) {
+          try {
+            // Perform click interaction
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+            const mouseY = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+            
+            // Update raycast manager mouse position
+            if (this.raycastManager && this.raycastManager.mouse) {
+              this.raycastManager.mouse.set(mouseX, mouseY);
+            } else if (typeof raycastManager !== 'undefined' && raycastManager.mouse) {
+              raycastManager.mouse.set(mouseX, mouseY);
+            }
+            
+            // Perform interaction
+            const hitInfo = (this.raycastManager || raycastManager).update();
+            const playerPos = (this.physicsSystem || physicsSystem) ? 
+              (this.physicsSystem || physicsSystem).getPlayerPosition() : 
+              { x: 0, y: 0, z: 0 };
+            (this.interactionManager || interactionManager).handleClick(hitInfo, playerPos);
+          } catch (error) {
+            console.warn('Touch click interaction error:', error);
+          }
+        }
+        
+        isTouchingForCamera = false;
+        e.preventDefault();
+      }
+    }, { passive: false });
+    
+    // Handle touch cancel events
+    canvas.addEventListener('touchcancel', (e) => {
+      isTouchingForCamera = false;
     }, { passive: false });
   }
   
