@@ -215,7 +215,7 @@ class LandingPage {
       -webkit-overflow-scrolling: touch;
     `;
 
-    // Background Video with 95% transparency
+    // Background Video with fallback to gradient
     const backgroundVideo = document.createElement('video');
     backgroundVideo.style.cssText = `
       position: absolute;
@@ -224,7 +224,7 @@ class LandingPage {
       width: 100%;
       height: 100%;
       object-fit: cover;
-      opacity: 0.95;
+      opacity: 0;
       z-index: 1;
       pointer-events: none;
       /* Mobile optimizations */
@@ -232,40 +232,87 @@ class LandingPage {
       transform: translateZ(0);
       -webkit-backface-visibility: hidden;
       backface-visibility: hidden;
-      /* Ensure video works on iOS */
-      -webkit-playsinline: true;
-      -webkit-video-playable-inline: true;
+    `;
+
+    // Add fallback gradient background immediately
+    const fallbackBackground = document.createElement('div');
+    fallbackBackground.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 25%, #16213e 50%, #0f3460 75%, #0a0a0a 100%);
+      z-index: 1;
+      pointer-events: none;
     `;
     
     // Set video attributes for optimal performance
     backgroundVideo.autoplay = true;
     backgroundVideo.muted = true;
     backgroundVideo.loop = true;
-    backgroundVideo.playsInline = true; // Important for mobile
-    backgroundVideo.preload = 'auto';
+    backgroundVideo.playsInline = true;
+    backgroundVideo.preload = 'metadata';
+    backgroundVideo.crossOrigin = 'anonymous';
     
-    // Create source element for the video
-    const videoSource = document.createElement('source');
-    // Use encodeURIComponent to handle spaces and special characters in filename
-    videoSource.src = encodeURI('./Adobe Express - IQWPE3043 (1).mp4');
-    videoSource.type = 'video/mp4';
-    
-    // Add fallback text for browsers that don't support video
-    backgroundVideo.textContent = 'Your browser does not support the video tag.';
-    
-    // Append source to video
-    backgroundVideo.appendChild(videoSource);
-    
-    // Handle video loading and play
+    // List of possible video paths to try
+    const videoPaths = [
+      './Adobe Express - IQWPE3043 (1).mp4',
+      './Adobe_Express_IQWPE3043.mp4',
+      './background-video.mp4',
+      './Untitled video - Made with Clipchamp (1).mp4',
+      './background.mp4'
+    ];
+
+    let currentVideoIndex = 0;
+
+    const tryLoadVideo = (index) => {
+      if (index >= videoPaths.length) {
+        console.log('All video paths failed, using gradient background');
+        // Keep the gradient background visible
+        return;
+      }
+
+      const videoPath = videoPaths[index];
+      console.log(`Trying to load video: ${videoPath}`);
+
+      // Clear any existing sources
+      backgroundVideo.innerHTML = '';
+      
+      const videoSource = document.createElement('source');
+      videoSource.src = videoPath;
+      videoSource.type = 'video/mp4';
+      
+      backgroundVideo.appendChild(videoSource);
+      
+      // Force reload
+      backgroundVideo.load();
+    };
+
+    // Handle video loading success
     backgroundVideo.addEventListener('loadeddata', () => {
+      console.log('Video loaded successfully');
+      
       // Check if device is mobile
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       
+      const playVideo = () => {
+        backgroundVideo.play()
+          .then(() => {
+            console.log('Video playing successfully');
+            // Fade in the video
+            backgroundVideo.style.transition = 'opacity 1s ease-in-out';
+            backgroundVideo.style.opacity = '0.95';
+          })
+          .catch(error => {
+            console.log('Video play failed:', error);
+          });
+      };
+
       if (isMobile) {
-        // On mobile, wait for user interaction before playing
+        // On mobile, wait for user interaction
         const playVideoOnInteraction = () => {
-          backgroundVideo.play().catch(e => console.log('Mobile video play failed:', e));
-          // Remove event listeners after first interaction
+          playVideo();
           document.removeEventListener('touchstart', playVideoOnInteraction);
           document.removeEventListener('click', playVideoOnInteraction);
         };
@@ -273,77 +320,54 @@ class LandingPage {
         document.addEventListener('touchstart', playVideoOnInteraction, { passive: true });
         document.addEventListener('click', playVideoOnInteraction, { passive: true });
       } else {
-        // On desktop, try autoplay
-        backgroundVideo.play().catch(error => {
-          console.log('Video autoplay failed:', error);
-          // Fallback: try to play on user interaction
-          document.addEventListener('click', () => {
-            backgroundVideo.play().catch(e => console.log('Video play failed:', e));
-          }, { once: true });
-        });
+        // On desktop, try autoplay immediately
+        playVideo();
       }
     });
     
-    // Handle video errors with better fallback
+    // Handle video loading errors
     backgroundVideo.addEventListener('error', (e) => {
-      console.error('Video loading error:', e);
-      // Try alternative video path if first one fails
-      if (videoSource.src.includes('Adobe Express')) {
-        console.log('Trying alternative video path...');
-        videoSource.src = encodeURI('./Untitled video - Made with Clipchamp (1).mp4.gif');
-        videoSource.type = 'video/mp4';
-      } else {
-        // Final fallback to a solid color background
-        console.log('Video failed to load, using fallback background');
-        backgroundVideo.style.background = 'linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%)';
-        backgroundVideo.style.opacity = '0.95';
-      }
+      console.error(`Video loading error for ${videoPaths[currentVideoIndex]}:`, e);
+      currentVideoIndex++;
+      tryLoadVideo(currentVideoIndex);
     });
-    
-    // Add performance optimizations
-    backgroundVideo.addEventListener('canplay', () => {
-      // Video is ready to play
-      console.log('Background video ready to play');
-      // Fade in the video smoothly
-      backgroundVideo.style.transition = 'opacity 0.5s ease-in-out';
-      backgroundVideo.style.opacity = '0.95';
+
+    // Handle source errors
+    backgroundVideo.addEventListener('loadstart', () => {
+      console.log(`Loading video: ${videoPaths[currentVideoIndex]}`);
     });
-    
-    // Show loading state initially
-    backgroundVideo.style.opacity = '0';
-    
-    // Handle video pause/resume for better performance
-    let isVideoVisible = true;
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          if (!isVideoVisible) {
-            backgroundVideo.play().catch(e => console.log('Video resume failed:', e));
-            isVideoVisible = true;
-          }
-        } else {
-          if (isVideoVisible) {
-            backgroundVideo.pause();
-            isVideoVisible = false;
-          }
-        }
-      });
-    }, { threshold: 0.1 });
-    
-    // Start observing the video element
-    observer.observe(backgroundVideo);
+
+    // Start trying to load the first video
+    tryLoadVideo(currentVideoIndex);
 
     // Top logo
     const topLogo = document.createElement('img');
-    topLogo.src = encodeURI('./Asset 9@4x-8.png');
+    topLogo.src = './Asset 9@4x-8.png';
     topLogo.alt = 'Logo';
     topLogo.className = 'top-logo';
     
     // Handle logo loading error
     topLogo.onerror = () => {
-      console.log('Logo failed to load, using fallback');
-      topLogo.style.display = 'none';
+      console.log('Logo failed to load, trying alternative paths');
+      const logoPaths = ['./logo.png', './Asset_9@4x-8.png', './logo.svg'];
+      
+      for (let path of logoPaths) {
+        const testImg = new Image();
+        testImg.onload = () => {
+          topLogo.src = path;
+          return;
+        };
+        testImg.src = path;
+      }
+      
+      // If all fail, hide the logo
+      setTimeout(() => {
+        if (topLogo.naturalWidth === 0) {
+          topLogo.style.display = 'none';
+        }
+      }, 2000);
     };
+    
     topLogo.style.cssText = `
       width: 120px;
       height: auto;
@@ -351,11 +375,6 @@ class LandingPage {
       z-index: 3;
       margin-bottom: 40px;
       filter: brightness(1.1);
-      /* Mobile responsive */
-      @media (max-width: 768px) {
-        width: 80px;
-        margin-bottom: 30px;
-      }
     `;
 
     // Content overlay
@@ -383,6 +402,7 @@ class LandingPage {
     // Subtitle
     const subtitle = document.createElement('div');
     subtitle.className = 'subtitle';
+    subtitle.textContent = 'EXPERIENCE HISTORY';
     subtitle.style.cssText = `
       font-size: 14px;
       font-weight: 600;
@@ -401,19 +421,13 @@ class LandingPage {
     title.style.cssText = `
       margin-bottom: 30px;
       line-height: 1.1;
-      /* Mobile responsive */
-      @media (max-width: 768px) {
-        font-size: 32px !important;
-      }
-      @media (max-width: 480px) {
-        font-size: 24px !important;
-      }
     `;
 
     // Description
     const description = document.createElement('p');
     description.className = 'hero-description';
-     description.style.cssText = `
+    description.textContent = 'Discover the hidden secrets of Nepal\'s most historic courtyard through an immersive adventure that blends ancient heritage with modern exploration.';
+    description.style.cssText = `
       font-size: 16px;
       line-height: 1.6;
       color: rgba(255, 255, 255, 0.9);
@@ -472,6 +486,9 @@ class LandingPage {
     mainContent.appendChild(description);
     mainContent.appendChild(playButton);
     contentOverlay.appendChild(mainContent);
+    
+    // Add fallback background first, then video, then content
+    heroSection.appendChild(fallbackBackground);
     heroSection.appendChild(backgroundVideo);
     heroSection.appendChild(topLogo);
     heroSection.appendChild(contentOverlay);
@@ -528,8 +545,23 @@ class LandingPage {
     
     // Handle image1 loading error
     image1.onerror = () => {
-      console.log('Image1 failed to load, using fallback');
-      image1.style.display = 'none';
+      console.log('Image1 failed to load, trying alternatives');
+      const imgPaths = ['./pic1.jpeg', './pic1.png', './image1.jpg'];
+      
+      for (let path of imgPaths) {
+        const testImg = new Image();
+        testImg.onload = () => {
+          image1.src = path;
+          return;
+        };
+        testImg.src = path;
+      }
+      
+      setTimeout(() => {
+        if (image1.naturalWidth === 0) {
+          image1.style.display = 'none';
+        }
+      }, 2000);
     };
     image1.style.cssText = `
       width: 100%;
@@ -545,8 +577,23 @@ class LandingPage {
     
     // Handle image2 loading error
     image2.onerror = () => {
-      console.log('Image2 failed to load, using fallback');
-      image2.style.display = 'none';
+      console.log('Image2 failed to load, trying alternatives');
+      const imgPaths = ['./pic2.jpg', './pic2.png', './image2.jpg'];
+      
+      for (let path of imgPaths) {
+        const testImg = new Image();
+        testImg.onload = () => {
+          image2.src = path;
+          return;
+        };
+        testImg.src = path;
+      }
+      
+      setTimeout(() => {
+        if (image2.naturalWidth === 0) {
+          image2.style.display = 'none';
+        }
+      }, 2000);
     };
     image2.style.cssText = `
       width: 100%;
@@ -761,4 +808,4 @@ class LandingPage {
 }
 
 // Export for use in main.js
-export default LandingPage; 
+export default LandingPage;
