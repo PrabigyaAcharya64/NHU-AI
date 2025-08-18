@@ -752,6 +752,50 @@ function setupEventListeners() {
     }
   });
 
+  // Mobile touch interaction
+  document.addEventListener('touchstart', (e) => {
+    // Only handle touch if it's a mobile device and not touching joysticks
+    if (mobileControls && mobileControls.isMobile && mobileControls.isLandscape) {
+      e.preventDefault();
+      
+      // Check if touch is on a joystick or UI element
+      const touch = e.touches[0];
+      const target = document.elementFromPoint(touch.clientX, touch.clientY);
+      
+      // Skip if touching joysticks, UI elements, or labels
+      if (target && (
+        target.closest('.joystick') || 
+        target.closest('#crosshair') ||
+        target.textContent === 'MOVE' ||
+        target.textContent === 'CAMERA' ||
+        target.style.position === 'absolute' ||
+        target.style.zIndex ||
+        target.tagName === 'BUTTON'
+      )) {
+        return;
+      }
+      
+      try {
+        // Update mouse position for raycasting
+        const rect = renderer.domElement.getBoundingClientRect();
+        const mouseX = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+        const mouseY = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+        
+        // Update raycast manager mouse position
+        if (raycastManager && raycastManager.mouse) {
+          raycastManager.mouse.set(mouseX, mouseY);
+        }
+        
+        // Perform interaction
+        const hitInfo = raycastManager.update();
+        const playerPos = physicsSystem ? physicsSystem.getPlayerPosition() : { x: 0, y: 0, z: 0 };
+        interactionManager.handleClick(hitInfo, playerPos);
+      } catch (error) {
+        console.warn('Touch interaction error:', error);
+      }
+    }
+  }, { passive: false });
+
 
 
   // Window resize
@@ -860,9 +904,7 @@ function getMoveInput() {
         window.moveDir.forward = mobileInput.y;
         window.moveDir.right = mobileInput.x;
         
-        // Store camera input for physics system to handle
-        const cameraInput = mobileControls.getCameraInput();
-        window.mobileCameraInput = cameraInput;
+        // Camera input is now handled by touch drag, no need to store it
       } catch (mobileInputError) {
         console.warn('Mobile input error:', mobileInputError);
       }

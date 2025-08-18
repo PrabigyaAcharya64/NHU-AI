@@ -188,8 +188,7 @@ class PhysicsSystem {
       // Handle movement input
       this.handleMovement(dt);
       
-      // Handle camera joystick input for mobile
-      this.handleCameraJoystick(dt);
+      // Camera input is now handled by touch drag in mobile controls
       
       // Handle vertical movement
       this.handleVerticalMovement(dt);
@@ -477,20 +476,7 @@ class PhysicsSystem {
     }
   }
 
-  handleCameraJoystick(dt) {
-    // Handle mobile camera joystick input
-    if (window.mobileCameraInput && (window.mobileCameraInput.x !== 0 || window.mobileCameraInput.y !== 0)) {
-      const sensitivity = window.sceneConfig ? window.sceneConfig.sceneSettings.mouseSensitivity * 2 : 0.002;
-      const cameraSpeed = sensitivity * dt * 60; // Adjust for frame rate
-      
-      // Update yaw and pitch based on joystick input
-      if (window.yaw !== undefined && window.pitch !== undefined) {
-        window.yaw -= window.mobileCameraInput.x * cameraSpeed;
-        window.pitch -= window.mobileCameraInput.y * cameraSpeed;
-        window.pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, window.pitch));
-      }
-    }
-  }
+
 
   handleVerticalMovement(dt) {
     const keys = window.keys || {};

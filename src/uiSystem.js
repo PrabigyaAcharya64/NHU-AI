@@ -368,7 +368,7 @@ class HUDManager {
     progressContainer.style.cssText = `
       position: fixed;
       bottom: 20px;
-      left: 20px;
+      right: 20px;
       z-index: 1000;
       background: rgba(0, 0, 0, 0.7);
       border-radius: 8px;

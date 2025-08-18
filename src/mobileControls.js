@@ -27,6 +27,7 @@ class MobileJoystick {
   createElements() {
     // Container
     this.element = document.createElement('div');
+    this.element.className = 'joystick';
     this.element.style.cssText = `
       position: absolute;
       width: ${this.options.size}px;
@@ -130,16 +131,16 @@ class MobileJoystick {
     const y = -this.currentY / this.maxDistance; // Invert Y for intuitive control
     
     // Add deadzone for more precise control
-    const deadzone = 0.1;
+    const deadzone = 0.15; // Increased deadzone for less sensitive control
     const magnitude = Math.sqrt(x * x + y * y);
     
     if (magnitude < deadzone) {
       return { x: 0, y: 0 };
     }
     
-    // Apply smooth curve for better control
+    // Apply smooth curve for better control with reduced sensitivity
     const normalizedMagnitude = (magnitude - deadzone) / (1 - deadzone);
-    const smoothMagnitude = normalizedMagnitude * normalizedMagnitude;
+    const smoothMagnitude = normalizedMagnitude * normalizedMagnitude * 0.7; // Reduced sensitivity multiplier
     
     return {
       x: (x / magnitude) * smoothMagnitude,
@@ -164,6 +165,9 @@ class MobileControls {
     this.joysticks = {};
     this.orientationMessage = null;
     this.controlsShown = false;
+    this.cameraTouchActive = false;
+    this.lastTouchX = 0;
+    this.lastTouchY = 0;
     
     if (this.isMobile) {
       this.initialize();
@@ -256,16 +260,9 @@ class MobileControls {
       borderColor: 'rgba(76, 175, 80, 0.6)'
     });
     
-    // Camera joystick (right side) - For camera movement
-    this.joysticks.camera = new MobileJoystick(document.body, {
-      size: 120,
-      color: '#2196F3',
-      backgroundColor: 'rgba(33, 150, 243, 0.3)',
-      borderColor: 'rgba(33, 150, 243, 0.6)'
-    });
-    
     this.positionJoysticks();
     this.createFullscreenButton();
+    this.setupTouchCamera();
   }
   
   positionJoysticks() {
@@ -274,10 +271,6 @@ class MobileControls {
     // Movement joystick (bottom left)
     this.joysticks.movement.element.style.left = `${margin}px`;
     this.joysticks.movement.element.style.bottom = `${margin}px`;
-    
-    // Camera joystick (bottom right)
-    this.joysticks.camera.element.style.right = `${margin}px`;
-    this.joysticks.camera.element.style.bottom = `${margin}px`;
     
     // Add labels
     this.addJoystickLabels();
@@ -298,25 +291,11 @@ class MobileControls {
       z-index: 1000;
     `;
     document.body.appendChild(movementLabel);
-    
-    // Camera label
-    const cameraLabel = document.createElement('div');
-    cameraLabel.textContent = 'CAMERA';
-    cameraLabel.style.cssText = `
-      position: absolute;
-      right: 30px;
-      bottom: 160px;
-      color: #2196F3;
-      font-family: 'Poppins', sans-serif;
-      font-size: 12px;
-      font-weight: 500;
-      z-index: 1000;
-    `;
-    document.body.appendChild(cameraLabel);
   }
   
   createFullscreenButton() {
     this.fullscreenButton = document.createElement('div');
+    this.fullscreenButton.className = 'joystick';
     this.fullscreenButton.textContent = '⛶';
     this.fullscreenButton.style.cssText = `
       position: absolute;
@@ -361,6 +340,68 @@ class MobileControls {
     } else {
       document.exitFullscreen();
     }
+  }
+
+  setupTouchCamera() {
+    // Add touch camera controls to the canvas
+    const canvas = this.renderer.domElement;
+    
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        // Check if touching an interactive object first
+        const touch = e.touches[0];
+        const mouse = new THREE.Vector2();
+        mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+        
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, this.camera);
+        const intersects = raycaster.intersectObjects(this.scene.children, true);
+        
+        // Only start camera movement if not touching an interactive object
+        if (intersects.length === 0 || !this.isInteractiveObject(intersects[0].object)) {
+          this.cameraTouchActive = true;
+          this.lastTouchX = touch.clientX;
+          this.lastTouchY = touch.clientY;
+        }
+      }
+    }, { passive: false });
+    
+    canvas.addEventListener('touchmove', (e) => {
+      if (this.cameraTouchActive && e.touches.length === 1) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - this.lastTouchX;
+        const deltaY = touch.clientY - this.lastTouchY;
+        
+        const sensitivity = this.sceneConfig.sceneSettings.mouseSensitivity * 2;
+        // Update global yaw and pitch variables
+        if (window.yaw !== undefined && window.pitch !== undefined) {
+          window.yaw -= deltaX * sensitivity;
+          window.pitch -= deltaY * sensitivity;
+          window.pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, window.pitch));
+        }
+        
+        this.lastTouchX = touch.clientX;
+        this.lastTouchY = touch.clientY;
+      }
+    }, { passive: false });
+    
+    canvas.addEventListener('touchend', (e) => {
+      this.cameraTouchActive = false;
+    }, { passive: false });
+  }
+  
+  isInteractiveObject(object) {
+    // Check if the object is interactive (clue cubes, etc.)
+    return object.userData && (
+      object.userData.isClueCube || 
+      object.userData.isNewCube || 
+      object.userData.isInteractive ||
+      object.name === 'helloCube' ||
+      object.name === 'newCube' ||
+      object.name === 'anotherCube2'
+    );
   }
   
   bindOrientationEvents() {
@@ -417,9 +458,6 @@ class MobileControls {
     if (this.joysticks.movement) {
       this.joysticks.movement.element.style.display = 'flex';
     }
-    if (this.joysticks.camera) {
-      this.joysticks.camera.element.style.display = 'flex';
-    }
     if (this.fullscreenButton) {
       this.fullscreenButton.style.display = 'flex';
     }
@@ -428,9 +466,6 @@ class MobileControls {
   hideJoysticks() {
     if (this.joysticks.movement) {
       this.joysticks.movement.element.style.display = 'none';
-    }
-    if (this.joysticks.camera) {
-      this.joysticks.camera.element.style.display = 'none';
     }
     if (this.fullscreenButton) {
       this.fullscreenButton.style.display = 'none';
@@ -445,10 +480,8 @@ class MobileControls {
   }
   
   getCameraInput() {
-    if (!this.isMobile || !this.isLandscape || !this.joysticks.camera) {
-      return { x: 0, y: 0 };
-    }
-    return this.joysticks.camera.getValues();
+    // Camera input is now handled by touch drag, so return zero
+    return { x: 0, y: 0 };
   }
   
   destroy() {
@@ -460,9 +493,6 @@ class MobileControls {
     }
     if (this.joysticks.movement) {
       this.joysticks.movement.destroy();
-    }
-    if (this.joysticks.camera) {
-      this.joysticks.camera.destroy();
     }
   }
 }
