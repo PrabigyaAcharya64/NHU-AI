@@ -184,13 +184,14 @@ class MobileJoystick {
            (navigator.maxTouchPoints > 0);
   }
   
-  initialize() {
-    this.createOrientationMessage();
-    this.createJoysticks();
-    this.bindOrientationEvents();
-    this.checkOrientation();
-    this.startPeriodicOrientationCheck();
-  }
+     initialize() {
+     this.createOrientationMessage();
+     this.createJoysticks();
+     this.bindOrientationEvents();
+     this.checkOrientation();
+     this.startPeriodicOrientationCheck();
+     this.startCameraStateCheck();
+   }
   
   createOrientationMessage() {
     this.orientationMessage = document.createElement('div');
@@ -356,6 +357,32 @@ class MobileJoystick {
      let lastTouchTime = 0;
      let touchId = null; // Track specific touch ID for multi-touch support
      
+     // Function to reset camera touch state
+     const resetCameraTouch = () => {
+       isTouchingForCamera = false;
+       touchId = null;
+       console.log('Camera touch state reset');
+     };
+     
+     // Safety timeout to reset stuck camera state
+     let cameraResetTimeout = null;
+     const startCameraResetTimer = () => {
+       if (cameraResetTimeout) clearTimeout(cameraResetTimeout);
+       cameraResetTimeout = setTimeout(() => {
+         if (isTouchingForCamera) {
+           console.warn('Camera touch state stuck, forcing reset');
+           resetCameraTouch();
+         }
+       }, 5000); // Reset after 5 seconds if stuck
+     };
+     
+     const clearCameraResetTimer = () => {
+       if (cameraResetTimeout) {
+         clearTimeout(cameraResetTimeout);
+         cameraResetTimeout = null;
+       }
+     };
+     
      canvas.addEventListener('touchstart', (e) => {
        // Handle multiple touches - allow joystick and camera to work simultaneously
        for (let i = 0; i < e.touches.length; i++) {
@@ -383,6 +410,10 @@ class MobileJoystick {
            this.lastTouchX = touch.clientX;
            this.lastTouchY = touch.clientY;
            lastTouchTime = currentTime;
+           
+           // Start safety timer
+           startCameraResetTimer();
+           console.log('Camera touch started, ID:', touchId);
          }
        }
        
@@ -407,6 +438,8 @@ class MobileJoystick {
        const cameraTouch = Array.from(e.touches).find(touch => touch.identifier === touchId);
        
        if (isTouchingForCamera && cameraTouch) {
+         // Reset safety timer on each move
+         startCameraResetTimer();
          // Check if any other touches are on UI elements
          const hasUITouch = Array.from(e.touches).some(touch => {
            if (touch.identifier === touchId) return false; // Skip the camera touch
@@ -505,9 +538,9 @@ class MobileJoystick {
            }
          }
          
-         // Reset camera touch state
-         isTouchingForCamera = false;
-         touchId = null;
+                   // Reset camera touch state
+          resetCameraTouch();
+          clearCameraResetTimer();
          
          // Only prevent default if no other touches are active
          const hasRemainingUITouches = Array.from(e.touches).some(touch => {
@@ -532,11 +565,31 @@ class MobileJoystick {
        const cameraTouchCancelled = Array.from(e.changedTouches).some(touch => touch.identifier === touchId);
        
        if (cameraTouchCancelled) {
-         isTouchingForCamera = false;
-         touchId = null;
-       }
-     }, { passive: false });
-  }
+         resetCameraTouch();
+         clearCameraResetTimer();
+         console.log('Camera touch cancelled');
+                }
+       }, { passive: false });
+       
+       // Global touch end listener to catch any missed touch events
+       document.addEventListener('touchend', (e) => {
+         // If we have an active camera touch but no touches remain, reset
+         if (isTouchingForCamera && e.touches.length === 0) {
+           console.log('No touches remaining, resetting camera state');
+           resetCameraTouch();
+           clearCameraResetTimer();
+         }
+       }, { passive: true });
+       
+       // Handle visibility change to reset camera state when app goes to background
+       document.addEventListener('visibilitychange', () => {
+         if (document.hidden && isTouchingForCamera) {
+           console.log('App hidden, resetting camera state');
+           resetCameraTouch();
+           clearCameraResetTimer();
+         }
+       });
+   }
   
   isInteractiveObject(object) {
     // Check if the object is interactive (clue cubes, etc.)
@@ -591,14 +644,30 @@ class MobileJoystick {
     }, 500);
   }
   
-  // Periodic orientation check to ensure controls are always visible
-  startPeriodicOrientationCheck() {
-    setInterval(() => {
-      if (this.isMobile) {
-        this.checkOrientation();
-      }
-    }, 1000); // Check every 1 second for more responsiveness
-  }
+     // Periodic orientation check to ensure controls are always visible
+   startPeriodicOrientationCheck() {
+     setInterval(() => {
+       if (this.isMobile) {
+         this.checkOrientation();
+       }
+     }, 1000); // Check every 1 second for more responsiveness
+   }
+   
+   // Periodic camera state check to prevent stuck states
+   startCameraStateCheck() {
+     setInterval(() => {
+       if (this.isMobile && this.isLandscape) {
+         // Check if there are any active touches on the document
+         const hasActiveTouches = document.querySelectorAll('*:active').length > 0;
+         
+         // If no touches are active but camera state is stuck, reset it
+         if (!hasActiveTouches && this.cameraTouchActive) {
+           console.log('Periodic check: No active touches found, resetting camera state');
+           this.resetCameraTouchState();
+         }
+       }
+     }, 2000); // Check every 2 seconds
+   }
   
   showJoysticks() {
     if (this.joysticks.movement) {
@@ -635,6 +704,14 @@ class MobileJoystick {
      this.raycastManager = raycastManager;
      this.physicsSystem = physicsSystem;
      this.interactionManager = interactionManager;
+   }
+   
+   // Method to manually reset camera touch state (can be called from outside)
+   resetCameraTouchState() {
+     if (this.cameraTouchActive) {
+       this.cameraTouchActive = false;
+       console.log('Camera touch state manually reset');
+     }
    }
    
    destroy() {
