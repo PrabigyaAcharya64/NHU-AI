@@ -3,7 +3,7 @@ import { SplatMesh } from "@sparkjsdev/spark";
 import LandingPage from './landingPage.js';
 import LoadingScreen from './loadingScreen.js';
 import { MobileControls } from './mobileControls.js';
-import { RaycastManager, HUDManager, InteractionManager, createCrosshair } from './uiSystem.js';
+import { RaycastManager, HUDManager, InteractionManager, createCrosshair, showHint } from './uiSystem.js';
 import { PhysicsSystem } from './physicsSystem.js';
 import TopUIIcons from './topUIIcons.js';
 
@@ -23,7 +23,7 @@ window.addEventListener('error', (event) => {
 // Scene Configuration
 const sceneConfig = {
   sceneSettings: {
-    initialPosition: [2.842, 0.5, -0.298],
+    initialPosition: [3.3, -0.1, 0.5],
     gravity: [0, -9.81, 0],
     groundLevel: -1.35,
     playerHeight: 1.7,
@@ -48,7 +48,18 @@ const sceneConfig = {
     scale: [1, 1, 1]
   },
   boundingBox: {
-    polygon: [[-5, 5], [-5, -5], [5, -5], [5, 5]]
+    type: "cube",
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    scale: [20, 10, 20], // Large cube to encompass the playable area
+                  color: 0x0066ff, // Blue color for boundary cube
+              opacity: 0.3,
+              visible: true,
+              physicsRadius: 0.5,
+              pushStrength: 8.0,
+              escapeDistance: 2.0,
+              friction: 0.0,
+              restitution: 0.0
   },
   treasureHunt: {
     startMessage: "Find the hidden clues!",
@@ -133,21 +144,15 @@ const sceneConfig = {
 // Global variables
 let scene, camera, renderer, splat;
 let mobileControls, physicsSystem, raycastManager, hudManager, interactionManager;
-let linkCubes = [], redCube, purpleCube;
+let linkCubes = [], redCube, purpleCube, boundaryCube;
 let keys = {};
 let yaw = 0, pitch = 0;
 let isGrounded = false, isCrouching = false;
+
 let crosshair, infoPopup;
 let topUIIcons;
 
-// Purple cube manipulation system
-let isDraggingPurpleCube = false;
-let isRotatingPurpleCube = false;
-let purpleCubeManipulationMode = false;
-let dragStartMouse = { x: 0, y: 0 };
-let dragStartPosition = { x: 0, y: 0, z: 0 };
-let rotationStartMouse = { x: 0, y: 0 };
-let rotationStartRotation = { x: 0, y: 0, z: 0 };
+
 
 // Player constants
 const PLAYER_HEIGHT = sceneConfig.sceneSettings.playerHeight;
@@ -165,7 +170,10 @@ const GROUND_LEVEL = sceneConfig.sceneSettings.groundLevel;
 let gameState = {
   currentLevel: 0,
   completedLevels: [],
-  isGameComplete: false
+  isGameComplete: false,
+  gameStarted: false,  // Track if game icon has been pressed
+  treasuresFound: 0,   // Track number of treasures found
+  totalTreasures: 3    // Total number of treasures in the game
 };
 
 // Define the progression order
@@ -174,6 +182,22 @@ const cubeProgression = [
   'newCube', 
   'anotherCube2'
 ];
+
+// Define hints for each cube
+const cubeHints = {
+  'helloCube': {
+    title: "Level 1 - Clue 1",
+    hint: "Look for a green cube near the starting area. It's your first step in this treasure hunt adventure!"
+  },
+  'newCube': {
+    title: "Level 2 - Clue 2", 
+    hint: "Find the yellow cube. It's positioned in a different area of the map. Keep exploring!"
+  },
+  'anotherCube2': {
+    title: "Level 3 - Final Clue",
+    hint: "The purple cube holds the final secret. You're almost at the end of your journey!"
+  }
+};
 
 // Animation timing
 let lastTime = 0;
@@ -227,7 +251,7 @@ async function init(loadingScreen = null) {
   }
 }
 
-// Load SPLAT mesh with CDN-first approach (compulsory CDN, local fallback)
+
 async function loadSplatMesh(loadingScreen = null) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -360,8 +384,8 @@ function createGameObjects() {
     const material = new THREE.MeshLambertMaterial({ 
       color: clueColors[index],
       transparent: true,
-      opacity: 0.8,  // Make them visible
-      visible: true   // Make them visible
+      opacity: 0.8,
+      visible: false  // Start hidden until game icon is pressed
     });
     
     const cube = new THREE.Mesh(geometry, material);
@@ -372,7 +396,8 @@ function createGameObjects() {
       url: clue.hint,
       hasPhysics: true,
       level: clue.level,
-      color: clueColors[index]
+      color: clueColors[index],
+      isClueCube: true  // Mark as clue cube for identification
     };
     
     scene.add(cube);
@@ -395,6 +420,12 @@ function createGameObjects() {
       purpleCube.userData.friction = 0.1;
       purpleCube.userData.restitution = 0.3;
       
+      // Ensure the level is preserved for clickability
+      purpleCube.userData.level = clue.level;
+      purpleCube.userData.title = clue.title;
+      purpleCube.userData.url = clue.hint;
+      purpleCube.userData.isClueCube = true;
+      
       console.log('Purple cube configuration applied:', {
         position: [-0.097, -0.114, 0.209],
         rotation: [-0.03, 0.6, 0],
@@ -403,7 +434,9 @@ function createGameObjects() {
         pushStrength: 2.0,
         escapeDistance: 0.5,
         friction: 0.1,
-        restitution: 0.3
+        restitution: 0.3,
+        level: purpleCube.userData.level,
+        title: purpleCube.userData.title
       });
     }
     
@@ -491,29 +524,6 @@ function createGameObjects() {
   window.redCube = redCube;
   window.linkCubes = linkCubes;
   
-  // Auto-load purple cube state if available
-  const savedPurpleState = localStorage.getItem('purpleCubeState');
-  if (savedPurpleState && purpleCube) {
-    try {
-      const state = JSON.parse(savedPurpleState);
-      
-      // Apply saved position
-      purpleCube.position.set(state.position.x, state.position.y, state.position.z);
-      
-      // Apply saved rotation
-      purpleCube.rotation.set(state.rotation.x, state.rotation.y, state.rotation.z);
-      
-      console.log('Purple cube auto-loaded from saved state:', state);
-      console.log('Saved position:', state.position);
-      console.log('Saved rotation:', state.rotation);
-      console.log('Save timestamp:', state.timestamp);
-    } catch (error) {
-      console.error('Error auto-loading purple cube state:', error);
-    }
-  } else {
-    console.log('No saved purple cube state found - using default position');
-  }
-  
   console.log('Red cube created with configuration:', {
     position: redCube.position,
     rotation: redCube.rotation,
@@ -523,13 +533,52 @@ function createGameObjects() {
     visible: redMaterial.visible,
     color: redMaterial.color
   });
+
+  // Create boundary cube - MANIPULATABLE boundary
+  const boundaryConfig = sceneConfig.boundingBox;
+  const boundaryGeometry = new THREE.BoxGeometry(
+    boundaryConfig.scale[0], 
+    boundaryConfig.scale[1], 
+    boundaryConfig.scale[2]
+  );
+  const boundaryMaterial = new THREE.MeshLambertMaterial({ 
+    color: boundaryConfig.color,
+    transparent: true,
+    opacity: boundaryConfig.opacity,
+    visible: boundaryConfig.visible
+  });
   
-  console.log('All cubes created and visible!');
-  console.log('- Green cube (helloCube): First clue');
-  console.log('- Yellow cube (newCube): Second clue');
-  console.log('- Purple cube (anotherCube2): Final clue - MANIPULATABLE');
-  console.log('- Red cube: Fixed impenetrable obstacle');
+              boundaryCube = new THREE.Mesh(boundaryGeometry, boundaryMaterial);
+            // Set the exact position, rotation, and scale from your values
+            boundaryCube.position.set(0.1520446116331677, 0.03227039436318551, 0.3619356272375776);
+            boundaryCube.rotation.set(3.1700000000000004, 5.57, 0);
+            boundaryCube.scale.set(0.30735686772502346, 0.2525417069709226, 0.2760043589410565);
+            boundaryCube.name = "boundaryCube";
+              boundaryCube.userData = {
+              isImpenetrable: true,
+              isBoundaryCube: true,
+              physicsRadius: boundaryConfig.physicsRadius,
+              pushStrength: boundaryConfig.pushStrength,
+              escapeDistance: boundaryConfig.escapeDistance,
+              friction: boundaryConfig.friction,
+              restitution: boundaryConfig.restitution,
+              color: boundaryConfig.color
+            };
+  
+  scene.add(boundaryCube);
+  window.boundaryCube = boundaryCube;
+  
+  
+  
+  console.log('All cubes created!');
+  console.log('- Green cube (helloCube): First clue (hidden until game starts)');
+  console.log('- Yellow cube (newCube): Second clue (hidden until game starts)');
+  console.log('- Purple cube (anotherCube2): Final clue (hidden until game starts)');
+  console.log('- Red cube: Fixed impenetrable obstacle (always visible)');
+  
 }
+
+
 
 // Initialize systems with comprehensive error handling
 async function initializeSystems() {
@@ -593,22 +642,20 @@ async function initializeSystems() {
     window.showProgressionMessage = showProgressionMessage;
     window.isCubeClickable = isCubeClickable;
     window.isNewCube = isNewCube;
+    window.startTreasureHunt = startTreasureHunt;
+    window.showHint = showHint;
+    window.cubeHints = cubeHints;
+    window.gameState = gameState;
+    window.updateProgressBar = () => {
+      if (hudManager && hudManager.updateProgressBar) {
+        hudManager.updateProgressBar();
+      }
+    };
     
     // Expose red cube functions globally (for collision detection)
     window.wouldCollideWithRedCube = wouldCollideWithRedCube;
     window.applyCollisionPushback = applyCollisionPushback;
     window.forcePlayerOutOfRedCube = forcePlayerOutOfRedCube;
-    
-    // Expose purple cube functions globally
-    window.updatePurpleCubePhysics = updatePurpleCubePhysics;
-    window.savePurpleCubeState = savePurpleCubeState;
-    window.loadPurpleCubeState = loadPurpleCubeState;
-    window.exportPurpleCubeAsCode = exportPurpleCubeAsCode;
-    window.exportPurpleCubeAsJSON = exportPurpleCubeAsJSON;
-    window.exportPurpleCubeAsSceneConfig = exportPurpleCubeAsSceneConfig;
-    window.exportPurpleCubeProperties = exportPurpleCubeProperties;
-    window.exportPurpleCubeAsThreeJSCode = exportPurpleCubeAsThreeJSCode;
-    window.showPurpleCubeInfo = showPurpleCubeInfo;
     
     // Expose movement system to physics
     window.keys = keys;
@@ -621,6 +668,8 @@ async function initializeSystems() {
     window.topUIIcons = topUIIcons;
     
     console.log('All systems initialized successfully');
+    
+
   } catch (error) {
     console.error('Failed to initialize systems:', error);
     throw error;
@@ -643,74 +692,20 @@ function setupEventListeners() {
       document.body.style.cursor = 'default';
     }
 
-    // Purple cube manipulation mode toggle
-    if (e.code === 'KeyM') { // Press M to toggle purple cube manipulation mode
-      purpleCubeManipulationMode = !purpleCubeManipulationMode;
-      
-      if (purpleCubeManipulationMode) {
-        // Exit pointer lock to enable cursor
-        document.exitPointerLock();
-        document.body.style.cursor = 'grab';
-        console.log("Purple cube manipulation mode ON. Left-click+drag to move, Right-click+drag to rotate, M to exit.");
-      } else {
-        document.body.style.cursor = 'none';
-        isDraggingPurpleCube = false;
-        isRotatingPurpleCube = false;
-        console.log("Purple cube manipulation mode OFF. Click to re-enter FPS mode.");
-      }
-    }
-
-    // Purple cube state management
-    if (e.code === 'KeyS' && e.ctrlKey && !e.shiftKey) {
-      e.preventDefault();
-      savePurpleCubeState();
-    }
-    
-    if (e.code === 'KeyL' && e.ctrlKey) {
-      e.preventDefault();
-      loadPurpleCubeState();
-    }
-    
-    if (e.code === 'KeyE' && e.ctrlKey) {
-      e.preventDefault();
-      exportPurpleCubeAsCode();
-    }
-    
-    // Quick save in manipulation mode
-    if (purpleCubeManipulationMode && e.code === 'KeyS') {
-      savePurpleCubeState();
-    }
-
-    // Export functions
-    if (e.code === 'KeyJ' && e.ctrlKey) {
-      e.preventDefault();
-      exportPurpleCubeAsJSON();
-    }
-    
-    if (e.code === 'KeyC' && e.ctrlKey && e.shiftKey) {
-      e.preventDefault();
-      exportPurpleCubeAsSceneConfig();
-    }
-    
-    if (e.code === 'KeyP' && e.ctrlKey) {
-      e.preventDefault();
-      exportPurpleCubeProperties();
-    }
-    
-    if (e.code === 'KeyT' && e.ctrlKey) {
-      e.preventDefault();
-      exportPurpleCubeAsThreeJSCode();
-    }
-    
-    if (e.code === 'KeyI' && e.ctrlKey) {
-      e.preventDefault();
-      showPurpleCubeInfo();
-    }
-
     // UI shortcuts
-    if (e.code === 'KeyH' && !e.ctrlKey) { // Press H for help
+    if (e.code === 'KeyH' && !e.ctrlKey) { // Press H for help/hint
       if (topUIIcons) {
         topUIIcons.handleHelpClick();
+      }
+    }
+    
+    if (e.code === 'KeyQ') { // Press Q for quick hint
+      const gameState = window.gameState || { currentLevel: 0 };
+      const cubeProgression = ['helloCube', 'newCube', 'anotherCube2'];
+      const currentCubeName = cubeProgression[gameState.currentLevel];
+      
+      if (currentCubeName && window.showHint) {
+        window.showHint(currentCubeName);
       }
     }
     
@@ -720,23 +715,11 @@ function setupEventListeners() {
       }
     }
 
-    // Rotate purple cube with R key
-    if (e.code === 'KeyR') {
-      const rotations = [
-        [0, 0, 0],           // No rotation
-        [0, Math.PI/2, 0],   // 90° Y rotation  
-        [0, Math.PI, 0],     // 180° Y rotation
-        [0, -Math.PI/2, 0],  // -90° Y rotation
-        [Math.PI/2, 0, 0],   // 90° X rotation
-        [-Math.PI/2, 0, 0],  // -90° X rotation
-      ];
-      window.rotationIndex = (window.rotationIndex || 0) % rotations.length;
-      const rot = rotations[window.rotationIndex];
-      purpleCube.rotation.set(...rot);
-      updatePurpleCubePhysics();
-      console.log(`Rotation ${window.rotationIndex}: [${rot.map(r => (r * 180/Math.PI).toFixed(0) + '°').join(', ')}]`);
-      window.rotationIndex++;
-    }
+
+
+    
+
+    
   });
 
   document.addEventListener('keyup', (e) => {
@@ -769,119 +752,7 @@ function setupEventListeners() {
     }
   });
 
-  // Purple cube manipulation mouse events
-  document.addEventListener('mousedown', (e) => {
-    if (!purpleCubeManipulationMode || !purpleCube) return;
-    
-    // Check if clicking on purple cube
-    const mouse = new THREE.Vector2();
-    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-    
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObject(purpleCube);
-    
-    if (intersects.length > 0) {
-      e.preventDefault();
-      
-      if (e.button === 0) { // Left click - MOVE
-        isDraggingPurpleCube = true;
-        document.body.style.cursor = 'grabbing';
-        
-        dragStartMouse.x = e.clientX;
-        dragStartMouse.y = e.clientY;
-        dragStartPosition.x = purpleCube.position.x;
-        dragStartPosition.y = purpleCube.position.y;
-        dragStartPosition.z = purpleCube.position.z;
-        
-        console.log("Started dragging purple cube");
-        
-      } else if (e.button === 2) { // Right click - ROTATE
-        isRotatingPurpleCube = true;
-        document.body.style.cursor = 'grab';
-        
-        rotationStartMouse.x = e.clientX;
-        rotationStartMouse.y = e.clientY;
-        rotationStartRotation.x = purpleCube.rotation.x;
-        rotationStartRotation.y = purpleCube.rotation.y;
-        rotationStartRotation.z = purpleCube.rotation.z;
-        
-        console.log("Started rotating purple cube");
-      }
-    }
-  });
 
-  document.addEventListener('mousemove', (e) => {
-    if (!purpleCubeManipulationMode || !purpleCube) return;
-    
-    if (isDraggingPurpleCube) {
-      // Calculate movement based on mouse delta
-      const deltaX = (e.clientX - dragStartMouse.x) * sceneConfig.sceneSettings.dragSensitivity;
-      const deltaY = -(e.clientY - dragStartMouse.y) * sceneConfig.sceneSettings.dragSensitivity;
-      
-      // Move relative to camera view
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
-      const right = new THREE.Vector3();
-      right.crossVectors(forward, camera.up).normalize();
-      const up = new THREE.Vector3();
-      up.crossVectors(right, forward).normalize();
-      
-      // Calculate new position
-      const newPosition = new THREE.Vector3(
-        dragStartPosition.x,
-        dragStartPosition.y,
-        dragStartPosition.z
-      );
-      newPosition.addScaledVector(right, deltaX);
-      newPosition.addScaledVector(up, deltaY);
-      
-      // Update cube position
-      purpleCube.position.copy(newPosition);
-      
-      // Update physics
-      updatePurpleCubePhysics();
-      
-    } else if (isRotatingPurpleCube) {
-      // Calculate rotation based on mouse delta
-      const deltaX = (e.clientX - rotationStartMouse.x) * sceneConfig.sceneSettings.rotationSensitivity;
-      const deltaY = (e.clientY - rotationStartMouse.y) * sceneConfig.sceneSettings.rotationSensitivity;
-      
-      // Apply rotation (Y-axis for horizontal mouse, X-axis for vertical mouse)
-      purpleCube.rotation.y = rotationStartRotation.y + deltaX;
-      purpleCube.rotation.x = rotationStartRotation.x + deltaY;
-      
-      // Update physics
-      updatePurpleCubePhysics();
-    }
-  });
-
-  document.addEventListener('mouseup', (e) => {
-    if (!purpleCubeManipulationMode || !purpleCube) return;
-    
-    if (isDraggingPurpleCube && e.button === 0) {
-      isDraggingPurpleCube = false;
-      document.body.style.cursor = 'grab';
-      
-      const pos = purpleCube.position;
-      console.log(`Purple cube moved to: ${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)}`);
-      
-    } else if (isRotatingPurpleCube && e.button === 2) {
-      isRotatingPurpleCube = false;
-      document.body.style.cursor = 'grab';
-      
-      const rot = purpleCube.rotation;
-      console.log(`Purple cube rotated to: ${(rot.x * 180/Math.PI).toFixed(0)}°, ${(rot.y * 180/Math.PI).toFixed(0)}°, ${(rot.z * 180/Math.PI).toFixed(0)}°`);
-    }
-  });
-
-  // Prevent context menu when right-clicking purple cube in manipulation mode
-  document.addEventListener('contextmenu', (e) => {
-    if (purpleCubeManipulationMode) {
-      e.preventDefault();
-    }
-  });
 
   // Window resize
   window.addEventListener('resize', () => {
@@ -915,22 +786,27 @@ function animate() {
     const deltaTime = Math.min((currentTime - lastTime) / 1000, 1/30); // Cap delta time
     lastTime = currentTime;
     
-    // Update physics system
+    // Update physics system with error handling
     if (physicsSystem && physicsSystem.isInitialized) {
-      physicsSystem.update(deltaTime);
+      try {
+        physicsSystem.update(deltaTime);
+      } catch (physicsError) {
+        console.warn('Physics update error:', physicsError);
+      }
     }
     
-    // Update interaction system
+    // Update interaction system with error handling
     if (interactionManager && physicsSystem) {
-      const currentVel = physicsSystem.getPlayerVelocity();
-      const currentPos = physicsSystem.getPlayerPosition();
-      interactionManager.update(currentPos, isGrounded, isCrouching, currentVel);
+      try {
+        const currentVel = physicsSystem.getPlayerVelocity();
+        const currentPos = physicsSystem.getPlayerPosition();
+        interactionManager.update(currentPos, isGrounded, isCrouching, currentVel);
+      } catch (interactionError) {
+        console.warn('Interaction update error:', interactionError);
+      }
     }
     
-    // Update purple cube physics if being manipulated
-    if (purpleCube && (isDraggingPurpleCube || isRotatingPurpleCube)) {
-      updatePurpleCubePhysics();
-    }
+
     
     // Handle mobile controls
     if (mobileControls && mobileControls.isMobile) {
@@ -964,7 +840,6 @@ function animate() {
     }
   } catch (error) {
     console.error('Animation loop error:', error);
-    isAnimationRunning = false;
     // Continue animation even if there's an error, but wait a bit
     setTimeout(() => animate(), 16);
   }
@@ -998,7 +873,8 @@ function getMoveInput() {
 // Game logic functions
 function isCubeClickable(cube) {
   if (!cube || !cube.userData || cube.userData.level === undefined) return false;
-  return cube.userData.level === gameState.currentLevel;
+  // Only clickable if game has started AND it's the current level
+  return gameState.gameStarted && cube.userData.level === gameState.currentLevel;
 }
 
 function isNewCube(cube) {
@@ -1009,10 +885,22 @@ function advanceGameState() {
   if (gameState.currentLevel < cubeProgression.length - 1) {
     gameState.currentLevel++;
     gameState.completedLevels.push(gameState.currentLevel - 1);
+    gameState.treasuresFound++;
+    
+    // Update progress bar if it exists
+    if (window.updateProgressBar) {
+      window.updateProgressBar();
+    }
   }
   
   if (gameState.currentLevel >= cubeProgression.length) {
     gameState.isGameComplete = true;
+    gameState.treasuresFound = gameState.totalTreasures;
+    
+    // Update progress bar for final treasure
+    if (window.updateProgressBar) {
+      window.updateProgressBar();
+    }
   }
 }
 
@@ -1052,6 +940,32 @@ function showInfoPopup(title, url) {
 
 function showProgressionMessage() {
   showInfoPopup("Not Available Yet", "Complete the previous clues first!");
+}
+
+// Function to start the game and make clue cubes visible
+function startTreasureHunt() {
+  if (!gameState.gameStarted) {
+    gameState.gameStarted = true;
+    
+    // Make all clue cubes visible
+    linkCubes.forEach(cube => {
+      if (cube.userData && cube.userData.isClueCube) {
+        cube.material.visible = true;
+        cube.material.opacity = 0.8;
+      }
+    });
+    
+    // Show progress bar
+    if (hudManager && hudManager.showProgressBar) {
+      hudManager.showProgressBar();
+      hudManager.updateProgressBar();
+    }
+    
+    // Show notification that game has started
+    showInfoPopup("Treasure Hunt Started!", "Find the hidden clues! Start with the green cube.");
+    
+    console.log('Treasure hunt started - clue cubes are now visible and interactable');
+  }
 }
 
 // Red Cube Collision Detection System
@@ -1145,696 +1059,6 @@ function forcePlayerOutOfRedCube(playerPos) {
   }
 }
 
-// Red Cube Manipulation System
-function updateRedCubePhysics() {
-  if (redCube && physicsSystem && physicsSystem.updateRedCubePhysics) {
-    physicsSystem.updateRedCubePhysics(redCube);
-  }
-}
-
-// Purple Cube Manipulation System
-function updatePurpleCubePhysics() {
-  if (purpleCube && physicsSystem && physicsSystem.updatePurpleCubePhysics) {
-    physicsSystem.updatePurpleCubePhysics(purpleCube);
-  }
-}
-
-// Save current red cube state
-function saveRedCubeState() {
-  if (!redCube) return null;
-  
-  const state = {
-    position: {
-      x: redCube.position.x,
-      y: redCube.position.y,
-      z: redCube.position.z
-    },
-    rotation: {
-      x: redCube.rotation.x,
-      y: redCube.rotation.y,
-      z: redCube.rotation.z
-    },
-    timestamp: new Date().toISOString()
-  };
-  
-  // Save to browser storage (persists between sessions)
-  localStorage.setItem('redCubeState', JSON.stringify(state));
-  
-  console.log('Red cube state saved:', state);
-  
-  // Show notification
-  showSaveNotification('Red cube state saved!');
-  
-  return state;
-}
-
-// Save current purple cube state
-function savePurpleCubeState() {
-  if (!purpleCube) return null;
-  
-  const state = {
-    position: {
-      x: purpleCube.position.x,
-      y: purpleCube.position.y,
-      z: purpleCube.position.z
-    },
-    rotation: {
-      x: purpleCube.rotation.x,
-      y: purpleCube.rotation.y,
-      z: purpleCube.rotation.z
-    },
-    timestamp: new Date().toISOString()
-  };
-  
-  // Save to browser storage (persists between sessions)
-  localStorage.setItem('purpleCubeState', JSON.stringify(state));
-  
-  console.log('Purple cube state saved:', state);
-  
-  // Show notification
-  showSaveNotification('Purple cube state saved!');
-  
-  return state;
-}
-
-// Load red cube state
-function loadRedCubeState() {
-  if (!redCube) return null;
-  
-  const savedState = localStorage.getItem('redCubeState');
-  
-  if (savedState) {
-    try {
-      const state = JSON.parse(savedState);
-      
-      // Apply position
-      redCube.position.set(state.position.x, state.position.y, state.position.z);
-      
-      // Apply rotation
-      redCube.rotation.set(state.rotation.x, state.rotation.y, state.rotation.z);
-      
-      // Update physics
-      updateRedCubePhysics();
-      
-      console.log('Red cube state loaded:', state);
-      showSaveNotification('Red cube state loaded!');
-      
-      return state;
-    } catch (error) {
-      console.error('Error loading red cube state:', error);
-      showSaveNotification('Error loading saved state!', true);
-    }
-  } else {
-    console.log('No saved red cube state found');
-    showSaveNotification('No saved state found', true);
-  }
-  
-  return null;
-}
-
-// Load purple cube state
-function loadPurpleCubeState() {
-  if (!purpleCube) return null;
-  
-  const savedState = localStorage.getItem('purpleCubeState');
-  
-  if (savedState) {
-    try {
-      const state = JSON.parse(savedState);
-      
-      // Apply position
-      purpleCube.position.set(state.position.x, state.position.y, state.position.z);
-      
-      // Apply rotation
-      purpleCube.rotation.set(state.rotation.x, state.rotation.y, state.rotation.z);
-      
-      // Update physics
-      updatePurpleCubePhysics();
-      
-      console.log('Purple cube state loaded:', state);
-      showSaveNotification('Purple cube state loaded!');
-      
-      return state;
-    } catch (error) {
-      console.error('Error loading purple cube state:', error);
-      showSaveNotification('Error loading saved state!', true);
-    }
-  } else {
-    console.log('No saved purple cube state found');
-    showSaveNotification('No saved state found', true);
-  }
-  
-  return null;
-}
-
-// Export current state as code (copy to clipboard)
-function exportRedCubeAsCode() {
-  if (!redCube) return;
-  
-  const pos = redCube.position;
-  const rot = redCube.rotation;
-  
-  const codeString = `// Red cube configuration
-redCube.position.set(${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)});
-redCube.rotation.set(${rot.x.toFixed(3)}, ${rot.y.toFixed(3)}, ${rot.z.toFixed(3)});`;
-
-  // Copy to clipboard
-  navigator.clipboard.writeText(codeString).then(() => {
-    console.log('Red cube code copied to clipboard:');
-    console.log(codeString);
-    showSaveNotification('Code copied to clipboard!');
-  }).catch(err => {
-    console.error('Failed to copy to clipboard:', err);
-    console.log('Red cube code:');
-    console.log(codeString);
-    showSaveNotification('Check console for code', true);
-  });
-}
-
-// Export current purple cube state as code (copy to clipboard)
-function exportPurpleCubeAsCode() {
-  if (!purpleCube) return;
-  
-  const pos = purpleCube.position;
-  const rot = purpleCube.rotation;
-  
-  const codeString = `// Purple cube configuration
-purpleCube.position.set(${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)});
-purpleCube.rotation.set(${rot.x.toFixed(3)}, ${rot.y.toFixed(3)}, ${rot.z.toFixed(3)});`;
-
-  // Copy to clipboard
-  navigator.clipboard.writeText(codeString).then(() => {
-    console.log('Purple cube code copied to clipboard:');
-    console.log(codeString);
-    showSaveNotification('Code copied to clipboard!');
-  }).catch(err => {
-    console.error('Failed to copy to clipboard:', err);
-    console.log('Purple cube code:');
-    console.log(codeString);
-    showSaveNotification('Check console for code', true);
-  });
-}
-
-// Export red cube as JSON configuration
-function exportRedCubeAsJSON() {
-  if (!redCube) return;
-  
-  const config = {
-    name: "redCube",
-    type: "impenetrable",
-    position: [
-      parseFloat(redCube.position.x.toFixed(3)),
-      parseFloat(redCube.position.y.toFixed(3)),
-      parseFloat(redCube.position.z.toFixed(3))
-    ],
-    rotation: [
-      parseFloat(redCube.rotation.x.toFixed(3)),
-      parseFloat(redCube.rotation.y.toFixed(3)),
-      parseFloat(redCube.rotation.z.toFixed(3))
-    ],
-    scale: [
-      redCube.scale.x,
-      redCube.scale.y,
-      redCube.scale.z
-    ],
-    manipulatable: true,
-    physicsRadius: redCube.userData.physicsRadius || 0.85,
-    pushStrength: redCube.userData.pushStrength || 5.0,
-    escapeDistance: redCube.userData.escapeDistance || 1.0,
-    friction: redCube.userData.friction || 0.0,
-    restitution: redCube.userData.restitution || 0.0
-  };
-  
-  const jsonString = JSON.stringify(config, null, 2);
-  
-  // Copy to clipboard
-  navigator.clipboard.writeText(jsonString).then(() => {
-    console.log('Red cube JSON configuration copied to clipboard:');
-    console.log(jsonString);
-    showSaveNotification('JSON configuration copied!');
-  }).catch(err => {
-    console.error('Failed to copy to clipboard:', err);
-    console.log('Red cube JSON configuration:');
-    console.log(jsonString);
-    showSaveNotification('Check console for JSON', true);
-  });
-}
-
-// Export purple cube as JSON configuration
-function exportPurpleCubeAsJSON() {
-  if (!purpleCube) return;
-  
-  const config = {
-    name: "purpleCube",
-    type: "manipulatable",
-    position: [
-      parseFloat(purpleCube.position.x.toFixed(3)),
-      parseFloat(purpleCube.position.y.toFixed(3)),
-      parseFloat(purpleCube.position.z.toFixed(3))
-    ],
-    rotation: [
-      parseFloat(purpleCube.rotation.x.toFixed(3)),
-      parseFloat(purpleCube.rotation.y.toFixed(3)),
-      parseFloat(purpleCube.rotation.z.toFixed(3))
-    ],
-    scale: [
-      purpleCube.scale.x,
-      purpleCube.scale.y,
-      purpleCube.scale.z
-    ],
-    manipulatable: true,
-    physicsRadius: purpleCube.userData.physicsRadius || 0.25,
-    pushStrength: purpleCube.userData.pushStrength || 2.0,
-    escapeDistance: purpleCube.userData.escapeDistance || 0.5,
-    friction: purpleCube.userData.friction || 0.1,
-    restitution: purpleCube.userData.restitution || 0.3
-  };
-  
-  const jsonString = JSON.stringify(config, null, 2);
-  
-  // Copy to clipboard
-  navigator.clipboard.writeText(jsonString).then(() => {
-    console.log('Purple cube JSON configuration copied to clipboard:');
-    console.log(jsonString);
-    showSaveNotification('JSON configuration copied!');
-  }).catch(err => {
-    console.error('Failed to copy to clipboard:', err);
-    console.log('Purple cube JSON configuration:');
-    console.log(jsonString);
-    showSaveNotification('Check console for JSON', true);
-  });
-}
-
-// Export red cube as sceneConfig format
-function exportRedCubeAsSceneConfig() {
-  if (!redCube) return;
-  
-  const config = {
-    obstacles: [
-      {
-        name: "redCube",
-        type: "impenetrable",
-        position: [
-          parseFloat(redCube.position.x.toFixed(3)),
-          parseFloat(redCube.position.y.toFixed(3)),
-          parseFloat(redCube.position.z.toFixed(3))
-        ],
-        rotation: [
-          parseFloat(redCube.rotation.x.toFixed(3)),
-          parseFloat(redCube.rotation.y.toFixed(3)),
-          parseFloat(redCube.rotation.z.toFixed(3))
-        ],
-        scale: [
-          redCube.scale.x,
-          redCube.scale.y,
-          redCube.scale.z
-        ],
-        manipulatable: true,
-        physicsRadius: redCube.userData.physicsRadius || 0.85,
-        pushStrength: redCube.userData.pushStrength || 5.0,
-        escapeDistance: redCube.userData.escapeDistance || 1.0,
-        friction: redCube.userData.friction || 0.0,
-        restitution: redCube.userData.restitution || 0.0,
-        dragSensitivity: sceneConfig.sceneSettings.dragSensitivity,
-        rotationSensitivity: sceneConfig.sceneSettings.rotationSensitivity
-      }
-    ]
-  };
-  
-  const jsonString = JSON.stringify(config, null, 2);
-  
-  // Copy to clipboard
-  navigator.clipboard.writeText(jsonString).then(() => {
-    console.log('Red cube sceneConfig format copied to clipboard:');
-    console.log(jsonString);
-    showSaveNotification('SceneConfig format copied!');
-  }).catch(err => {
-    console.error('Failed to copy to clipboard:', err);
-    console.log('Red cube sceneConfig format:');
-    console.log(jsonString);
-    showSaveNotification('Check console for sceneConfig', true);
-  });
-}
-
-// Export purple cube as sceneConfig format
-function exportPurpleCubeAsSceneConfig() {
-  if (!purpleCube) return;
-  
-  const config = {
-    obstacles: [
-      {
-        name: "purpleCube",
-        type: "manipulatable",
-        position: [
-          parseFloat(purpleCube.position.x.toFixed(3)),
-          parseFloat(purpleCube.position.y.toFixed(3)),
-          parseFloat(purpleCube.position.z.toFixed(3))
-        ],
-        rotation: [
-          parseFloat(purpleCube.rotation.x.toFixed(3)),
-          parseFloat(purpleCube.rotation.y.toFixed(3)),
-          parseFloat(purpleCube.rotation.z.toFixed(3))
-        ],
-        scale: [
-          purpleCube.scale.x,
-          purpleCube.scale.y,
-          purpleCube.scale.z
-        ],
-        manipulatable: true,
-        physicsRadius: purpleCube.userData.physicsRadius || 0.25,
-        pushStrength: purpleCube.userData.pushStrength || 2.0,
-        escapeDistance: purpleCube.userData.escapeDistance || 0.5,
-        friction: purpleCube.userData.friction || 0.1,
-        restitution: purpleCube.userData.restitution || 0.3,
-        dragSensitivity: sceneConfig.sceneSettings.dragSensitivity,
-        rotationSensitivity: sceneConfig.sceneSettings.rotationSensitivity
-      }
-    ]
-  };
-  
-  const jsonString = JSON.stringify(config, null, 2);
-  
-  // Copy to clipboard
-  navigator.clipboard.writeText(jsonString).then(() => {
-    console.log('Purple cube sceneConfig format copied to clipboard:');
-    console.log(jsonString);
-    showSaveNotification('SceneConfig format copied!');
-  }).catch(err => {
-    console.error('Failed to copy to clipboard:', err);
-    console.log('Purple cube sceneConfig format:');
-    console.log(jsonString);
-    showSaveNotification('Check console for sceneConfig', true);
-  });
-}
-
-// Export red cube properties as individual values
-function exportRedCubeProperties() {
-  if (!redCube) return;
-  
-  const properties = {
-    // Position
-    positionX: parseFloat(redCube.position.x.toFixed(3)),
-    positionY: parseFloat(redCube.position.y.toFixed(3)),
-    positionZ: parseFloat(redCube.position.z.toFixed(3)),
-    
-    // Rotation (in radians)
-    rotationX: parseFloat(redCube.rotation.x.toFixed(3)),
-    rotationY: parseFloat(redCube.rotation.y.toFixed(3)),
-    rotationZ: parseFloat(redCube.rotation.z.toFixed(3)),
-    
-    // Rotation (in degrees)
-    rotationXDeg: parseFloat((redCube.rotation.x * 180 / Math.PI).toFixed(1)),
-    rotationYDeg: parseFloat((redCube.rotation.y * 180 / Math.PI).toFixed(1)),
-    rotationZDeg: parseFloat((redCube.rotation.z * 180 / Math.PI).toFixed(1)),
-    
-    // Scale
-    scaleX: redCube.scale.x,
-    scaleY: redCube.scale.y,
-    scaleZ: redCube.scale.z,
-    
-    // Physics properties
-    physicsRadius: redCube.userData.physicsRadius || 0.85,
-    pushStrength: redCube.userData.pushStrength || 5.0,
-    escapeDistance: redCube.userData.escapeDistance || 1.0,
-    friction: redCube.userData.friction || 0.0,
-    restitution: redCube.userData.restitution || 0.0
-  };
-  
-  const propertiesString = JSON.stringify(properties, null, 2);
-  
-  // Copy to clipboard
-  navigator.clipboard.writeText(propertiesString).then(() => {
-    console.log('Red cube properties copied to clipboard:');
-    console.log(propertiesString);
-    showSaveNotification('Properties copied!');
-  }).catch(err => {
-    console.error('Failed to copy to clipboard:', err);
-    console.log('Red cube properties:');
-    console.log(propertiesString);
-    showSaveNotification('Check console for properties', true);
-  });
-}
-
-// Export purple cube properties as individual values
-function exportPurpleCubeProperties() {
-  if (!purpleCube) return;
-  
-  const properties = {
-    // Position
-    positionX: parseFloat(purpleCube.position.x.toFixed(3)),
-    positionY: parseFloat(purpleCube.position.y.toFixed(3)),
-    positionZ: parseFloat(purpleCube.position.z.toFixed(3)),
-    
-    // Rotation (in radians)
-    rotationX: parseFloat(purpleCube.rotation.x.toFixed(3)),
-    rotationY: parseFloat(purpleCube.rotation.y.toFixed(3)),
-    rotationZ: parseFloat(purpleCube.rotation.z.toFixed(3)),
-    
-    // Rotation (in degrees)
-    rotationXDeg: parseFloat((purpleCube.rotation.x * 180 / Math.PI).toFixed(1)),
-    rotationYDeg: parseFloat((purpleCube.rotation.y * 180 / Math.PI).toFixed(1)),
-    rotationZDeg: parseFloat((purpleCube.rotation.z * 180 / Math.PI).toFixed(1)),
-    
-    // Scale
-    scaleX: purpleCube.scale.x,
-    scaleY: purpleCube.scale.y,
-    scaleZ: purpleCube.scale.z,
-    
-    // Physics properties
-    physicsRadius: purpleCube.userData.physicsRadius || 0.25,
-    pushStrength: purpleCube.userData.pushStrength || 2.0,
-    escapeDistance: purpleCube.userData.escapeDistance || 0.5,
-    friction: purpleCube.userData.friction || 0.1,
-    restitution: purpleCube.userData.restitution || 0.3
-  };
-  
-  const propertiesString = JSON.stringify(properties, null, 2);
-  
-  // Copy to clipboard
-  navigator.clipboard.writeText(propertiesString).then(() => {
-    console.log('Purple cube properties copied to clipboard:');
-    console.log(propertiesString);
-    showSaveNotification('Properties copied!');
-  }).catch(err => {
-    console.error('Failed to copy to clipboard:', err);
-    console.log('Purple cube properties:');
-    console.log(propertiesString);
-    showSaveNotification('Check console for properties', true);
-  });
-}
-
-// Export red cube as Three.js setup code
-function exportRedCubeAsThreeJSCode() {
-  if (!redCube) return;
-  
-  const pos = redCube.position;
-  const rot = redCube.rotation;
-  const scale = redCube.scale;
-  
-  const codeString = `// Red cube Three.js setup
-const redGeometry = new THREE.BoxGeometry(${scale.x}, ${scale.y}, ${scale.z});
-const redMaterial = new THREE.MeshLambertMaterial({ 
-  color: 0xff0000,
-  transparent: true,
-  opacity: 0.6,
-  visible: true
-});
-
-const redCube = new THREE.Mesh(redGeometry, redMaterial);
-redCube.position.set(${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)});
-redCube.rotation.set(${rot.x.toFixed(3)}, ${rot.y.toFixed(3)}, ${rot.z.toFixed(3)});
-redCube.userData = {
-  isImpenetrable: true,
-  physicsRadius: ${redCube.userData.physicsRadius || 0.85},
-  pushStrength: ${redCube.userData.pushStrength || 5.0},
-  escapeDistance: ${redCube.userData.escapeDistance || 1.0},
-  friction: ${redCube.userData.friction || 0.0},
-  restitution: ${redCube.userData.restitution || 0.0}
-};
-
-scene.add(redCube);`;
-
-  // Copy to clipboard
-  navigator.clipboard.writeText(codeString).then(() => {
-    console.log('Red cube Three.js code copied to clipboard:');
-    console.log(codeString);
-    showSaveNotification('Three.js code copied!');
-  }).catch(err => {
-    console.error('Failed to copy to clipboard:', err);
-    console.log('Red cube Three.js code:');
-    console.log(codeString);
-    showSaveNotification('Check console for Three.js code', true);
-  });
-}
-
-// Export purple cube as Three.js setup code
-function exportPurpleCubeAsThreeJSCode() {
-  if (!purpleCube) return;
-  
-  const pos = purpleCube.position;
-  const rot = purpleCube.rotation;
-  const scale = purpleCube.scale;
-  
-  const codeString = `// Purple cube Three.js setup
-const purpleGeometry = new THREE.BoxGeometry(${scale.x}, ${scale.y}, ${scale.z});
-const purpleMaterial = new THREE.MeshLambertMaterial({ 
-  color: 0x8800ff,
-  transparent: true,
-  opacity: 0.8,
-  visible: true
-});
-
-const purpleCube = new THREE.Mesh(purpleGeometry, purpleMaterial);
-purpleCube.position.set(${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)});
-purpleCube.rotation.set(${rot.x.toFixed(3)}, ${rot.y.toFixed(3)}, ${rot.z.toFixed(3)});
-purpleCube.userData = {
-  isImpenetrable: false,
-  physicsRadius: ${purpleCube.userData.physicsRadius || 0.25},
-  pushStrength: ${purpleCube.userData.pushStrength || 2.0},
-  escapeDistance: ${purpleCube.userData.escapeDistance || 0.5},
-  friction: ${purpleCube.userData.friction || 0.1},
-  restitution: ${purpleCube.userData.restitution || 0.3}
-};
-
-scene.add(purpleCube);`;
-
-  // Copy to clipboard
-  navigator.clipboard.writeText(codeString).then(() => {
-    console.log('Purple cube Three.js code copied to clipboard:');
-    console.log(codeString);
-    showSaveNotification('Three.js code copied!');
-  }).catch(err => {
-    console.error('Failed to copy to clipboard:', err);
-    console.log('Purple cube Three.js code:');
-    console.log(codeString);
-    showSaveNotification('Check console for Three.js code', true);
-  });
-}
-
-// Show all red cube information in console
-function showRedCubeInfo() {
-  if (!redCube) {
-    console.log('Red cube not found!');
-    return;
-  }
-  
-  const pos = redCube.position;
-  const rot = redCube.rotation;
-  const scale = redCube.scale;
-  
-  console.log('=== RED CUBE INFORMATION ===');
-  console.log('Position:', {
-    x: parseFloat(pos.x.toFixed(3)),
-    y: parseFloat(pos.y.toFixed(3)),
-    z: parseFloat(pos.z.toFixed(3))
-  });
-  console.log('Rotation (radians):', {
-    x: parseFloat(rot.x.toFixed(3)),
-    y: parseFloat(rot.y.toFixed(3)),
-    z: parseFloat(rot.z.toFixed(3))
-  });
-  console.log('Rotation (degrees):', {
-    x: parseFloat((rot.x * 180 / Math.PI).toFixed(1)) + '°',
-    y: parseFloat((rot.y * 180 / Math.PI).toFixed(1)) + '°',
-    z: parseFloat((rot.z * 180 / Math.PI).toFixed(1)) + '°'
-  });
-  console.log('Scale:', {
-    x: scale.x,
-    y: scale.y,
-    z: scale.z
-  });
-  console.log('Physics Properties:', {
-    physicsRadius: redCube.userData.physicsRadius || 0.85,
-    pushStrength: redCube.userData.pushStrength || 5.0,
-    escapeDistance: redCube.userData.escapeDistance || 1.0,
-    friction: redCube.userData.friction || 0.0,
-    restitution: redCube.userData.restitution || 0.0
-  });
-  console.log('Material Properties:', {
-    color: redCube.material.color.getHexString(),
-    opacity: redCube.material.opacity,
-    visible: redCube.material.visible,
-    transparent: redCube.material.transparent
-  });
-  console.log('===========================');
-}
-
-// Show all purple cube information in console
-function showPurpleCubeInfo() {
-  if (!purpleCube) {
-    console.log('Purple cube not found!');
-    return;
-  }
-  
-  const pos = purpleCube.position;
-  const rot = purpleCube.rotation;
-  const scale = purpleCube.scale;
-  
-  console.log('=== PURPLE CUBE INFORMATION ===');
-  console.log('Position:', {
-    x: parseFloat(pos.x.toFixed(3)),
-    y: parseFloat(pos.y.toFixed(3)),
-    z: parseFloat(pos.z.toFixed(3))
-  });
-  console.log('Rotation (radians):', {
-    x: parseFloat(rot.x.toFixed(3)),
-    y: parseFloat(rot.y.toFixed(3)),
-    z: parseFloat(rot.z.toFixed(3))
-  });
-  console.log('Rotation (degrees):', {
-    x: parseFloat((rot.x * 180 / Math.PI).toFixed(1)) + '°',
-    y: parseFloat((rot.y * 180 / Math.PI).toFixed(1)) + '°',
-    z: parseFloat((rot.z * 180 / Math.PI).toFixed(1)) + '°'
-  });
-  console.log('Scale:', {
-    x: scale.x,
-    y: scale.y,
-    z: scale.z
-  });
-  console.log('Physics Properties:', {
-    physicsRadius: purpleCube.userData.physicsRadius || 0.25,
-    pushStrength: purpleCube.userData.pushStrength || 2.0,
-    escapeDistance: purpleCube.userData.escapeDistance || 0.5,
-    friction: purpleCube.userData.friction || 0.1,
-    restitution: purpleCube.userData.restitution || 0.3
-  });
-  console.log('Material Properties:', {
-    color: purpleCube.material.color.getHexString(),
-    opacity: purpleCube.material.opacity,
-    visible: purpleCube.material.visible,
-    transparent: purpleCube.material.transparent
-  });
-  console.log('===========================');
-}
-
-// Show save/load notification
-function showSaveNotification(message, isError = false) {
-  const notification = document.createElement('div');
-  notification.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    background: ${isError ? 'rgba(255, 0, 0, 0.9)' : 'rgba(66, 159, 184, 0.9)'};
-    color: ${isError ? '#fff' : '#000'};
-    padding: 12px 20px;
-    border-radius: 8px;
-    font-family: 'Courier New', monospace;
-    font-size: 14px;
-    font-weight: bold;
-    z-index: 10001;
-    animation: slideInOut 3s ease-in-out;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  `;
-  notification.textContent = message;
-  document.body.appendChild(notification);
-  
-  setTimeout(() => {
-    if (notification.parentNode) {
-      notification.remove();
-    }
-  }, 3000);
-}
-
 // Start game function with better error handling
 async function startGame(loadingScreen) {
   try {
@@ -1869,35 +1093,14 @@ async function startGame(loadingScreen) {
   }
 }
 
+
+
 // Make startGame available globally
 window.startGame = startGame;
 
 const landingPage = new LandingPage();
 
-// Add CSS animation for notifications
-const saveNotificationStyle = document.createElement('style');
-saveNotificationStyle.textContent = `
-  @keyframes slideInOut {
-    0% { 
-      opacity: 0; 
-      transform: translateX(100px); 
-    }
-    15% { 
-      opacity: 1; 
-      transform: translateX(0); 
-    }
-    85% { 
-      opacity: 1; 
-      transform: translateX(0); 
-    }
-    100% { 
-      opacity: 0; 
-      transform: translateX(100px); 
-    }
-  }
-`;
-document.head.appendChild(saveNotificationStyle);
-
 console.log("TRULY IMPENETRABLE red cube physics loaded - 100% solid barrier with emergency protection");
-console.log("Purple cube manipulation system loaded. Press M to toggle manipulation mode.");
-console.log("Keyboard shortcuts: M (manipulation mode), R (rotate), Ctrl+S (save), Ctrl+L (load), Ctrl+E (export)");
+console.log("Boundary cube collision system active - impenetrable boundary");
+console.log("Professional movement system with gravity, ground collision, and height limits");
+console.log("Game ready - click the game icon to start the treasure hunt!");

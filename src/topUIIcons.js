@@ -41,13 +41,15 @@ class TopUIIcons {
 
         // Try to load the game logo image
         const logoImg = document.createElement('img');
-        logoImg.src = 'GAMELOGO.png';
+        logoImg.src = '/GAMELOGO.png';
         logoImg.style.cssText = `
             width: 32px;
             height: 32px;
             object-fit: contain;
         `;
+        
         logoImg.onerror = () => {
+            console.log('Game logo failed to load, using SVG fallback');
             // Fallback to SVG if image doesn't load
             logoContainer.innerHTML = this.getGameLogoSVG();
         };
@@ -69,22 +71,17 @@ class TopUIIcons {
         logoContainer.addEventListener('click', () => this.handleLogoClick());
 
         // --- Game/Joystick Icon ---
-        const gameIcon = this.createIcon('game', this.getJoystickSVG());
+        const gameIcon = this.createGameIcon();
         gameIcon.addEventListener('click', () => this.handleGameClick());
 
         // --- Help/Question Icon ---
         const helpIcon = this.createIcon('help', this.getHelpSVG());
         helpIcon.addEventListener('click', () => this.handleHelpClick());
 
-        // --- Settings Icon ---
-        const settingsIcon = this.createIcon('settings', this.getSettingsSVG());
-        settingsIcon.addEventListener('click', () => this.handleSettingsClick());
-
         // Assemble UI
         this.uiContainer.appendChild(logoContainer);
         this.uiContainer.appendChild(gameIcon);
         this.uiContainer.appendChild(helpIcon);
-        this.uiContainer.appendChild(settingsIcon);
 
         // Add to document
         document.body.appendChild(this.uiContainer);
@@ -184,10 +181,48 @@ class TopUIIcons {
         `;
     }
 
+    createGameIcon() {
+        const iconContainer = this.createIcon('game');
+
+        // Load joystick icon from file
+        const img = document.createElement('img');
+        img.src = 'joystick.svg';
+        img.alt = 'Game Controls';
+        img.style.cssText = `
+            width: 18px;
+            height: 18px;
+            filter: brightness(0) invert(1); /* makes it pure white */
+            object-fit: contain;
+            pointer-events: none;
+        `;
+
+        // Handle loading error with fallback
+        img.onerror = () => {
+            console.warn('Joystick SVG not found, using fallback');
+            iconContainer.innerHTML = this.getJoystickSVG();
+        };
+
+        iconContainer.appendChild(img);
+        return iconContainer;
+    }
+
     getJoystickSVG() {
         return `
-            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path fill="white" d="M18.5 2h-13C3.57 2 2 3.57 2 5.5v7C2 16.43 5.57 20 9.5 20c1.83 0 3.47-.69 4.5-1.79C15.03 19.31 16.67 20 18.5 20c3.93 0 7.5-3.57 7.5-7.5v-5.5C24 3.57 22.43 2 18.5 2zM6 10.5C6 11.33 5.33 12 4.5 12S3 11.33 3 10.5V9.5C3 8.67 3.67 8 4.5 8S6 8.67 6 9.5v1zM9 13H7v-2H6V9h1V7h2v2h1v2H9v2zm11-2.5c0 .83-.67 1.5-1.5 1.5S17 11.33 17 10.5V9.5c0-.83.67-1.5 1.5-1.5s1.5.67 1.5 1.5v1zm-3-3c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm2 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm0 4c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm2-2c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z"/>
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none">
+                <!-- Joystick Base Circle -->
+                <circle cx="12" cy="12" r="8" fill="white" stroke="white" stroke-width="1"/>
+                
+                <!-- Joystick Handle -->
+                <circle cx="12" cy="12" r="3" fill="white" stroke="white" stroke-width="1"/>
+                
+                <!-- Direction Indicators (D-pad style) -->
+                <path d="M12 6 L12 8" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                <path d="M12 16 L12 18" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                <path d="M6 12 L8 12" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                <path d="M16 12 L18 12" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                
+                <!-- Center Dot -->
+                <circle cx="12" cy="12" r="1" fill="white"/>
             </svg>
         `;
     }
@@ -200,13 +235,7 @@ class TopUIIcons {
         `;
     }
 
-    getSettingsSVG() {
-        return `
-            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.82,11.69,4.82,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
-            </svg>
-        `;
-    }
+
 
     // --- Event Handlers ---
 
@@ -216,19 +245,32 @@ class TopUIIcons {
     }
 
     handleGameClick() {
-        console.log('Game icon clicked - Game controls');
-        this.showNotification('Game Controls', 'Controls panel opened');
+        console.log('Game icon clicked - Starting treasure hunt');
+        
+        // Start the treasure hunt game
+        if (window.startTreasureHunt) {
+            window.startTreasureHunt();
+        }
+        
+        this.showNotification('Treasure Hunt', 'Game started! Find the hidden clues.');
     }
 
     handleHelpClick() {
-        console.log('Help clicked - Show help');
-        this.showNotification('Help', 'WASD: Move | Mouse: Look around');
+        console.log('Help clicked - Show hint for current level');
+        
+        // Get current level cube name
+        const gameState = window.gameState || { currentLevel: 0 };
+        const cubeProgression = ['helloCube', 'newCube', 'anotherCube2'];
+        const currentCubeName = cubeProgression[gameState.currentLevel];
+        
+        if (currentCubeName && window.showHint) {
+            window.showHint(currentCubeName);
+        } else {
+            this.showNotification('Help', 'WASD: Move | Mouse: Look around');
+        }
     }
 
-    handleSettingsClick() {
-        console.log('Settings clicked - Game settings');
-        this.showNotification('Settings', 'Game settings opened');
-    }
+
 
     showNotification(title, message) {
         // Remove existing notification

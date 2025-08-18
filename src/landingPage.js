@@ -1,6 +1,34 @@
 // Landing Page Module for Treasure Hunt
 import LoadingScreen from './loadingScreen.js';
 
+// --- ASSET LOADING UTILITY ---
+function loadAssetWithFallback(primaryPath, fallbackPath = null, type = 'image') {
+  return new Promise((resolve, reject) => {
+    const element = type === 'video' ? document.createElement('video') : document.createElement('img');
+    
+    const tryLoad = (path) => {
+      if (type === 'video') {
+        element.src = path;
+        element.load();
+      } else {
+        element.src = path;
+      }
+    };
+    
+    element.onload = () => resolve(element);
+    element.onerror = () => {
+      if (fallbackPath && element.src !== fallbackPath) {
+        console.log(`Primary asset failed, trying fallback: ${fallbackPath}`);
+        tryLoad(fallbackPath);
+      } else {
+        reject(new Error(`Failed to load asset: ${element.src}`));
+      }
+    };
+    
+    tryLoad(primaryPath);
+  });
+}
+
 class LandingPage {
   constructor() {
     this.isVisible = true;
@@ -218,7 +246,8 @@ class LandingPage {
     
     // Create source element for the video
     const videoSource = document.createElement('source');
-    videoSource.src = './Adobe Express - IQWPE3043 (1).mp4';
+    // Use encodeURIComponent to handle spaces and special characters in filename
+    videoSource.src = encodeURI('/Adobe Express - IQWPE3043 (1).mp4');
     videoSource.type = 'video/mp4';
     
     // Add fallback text for browsers that don't support video
@@ -255,11 +284,20 @@ class LandingPage {
       }
     });
     
-    // Handle video errors
+    // Handle video errors with better fallback
     backgroundVideo.addEventListener('error', (e) => {
       console.error('Video loading error:', e);
-      // Fallback to a solid color background
-      backgroundVideo.style.background = 'linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%)';
+      // Try alternative video path if first one fails
+      if (videoSource.src.includes('Adobe Express')) {
+        console.log('Trying alternative video path...');
+        videoSource.src = encodeURI('/Untitled video - Made with Clipchamp (1).mp4.gif');
+        videoSource.type = 'video/mp4';
+      } else {
+        // Final fallback to a solid color background
+        console.log('Video failed to load, using fallback background');
+        backgroundVideo.style.background = 'linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%)';
+        backgroundVideo.style.opacity = '0.95';
+      }
     });
     
     // Add performance optimizations
@@ -297,9 +335,15 @@ class LandingPage {
 
     // Top logo
     const topLogo = document.createElement('img');
-    topLogo.src = './Asset 9@4x-8.png';
+    topLogo.src = encodeURI('/Asset 9@4x-8.png');
     topLogo.alt = 'Logo';
     topLogo.className = 'top-logo';
+    
+    // Handle logo loading error
+    topLogo.onerror = () => {
+      console.log('Logo failed to load, using fallback');
+      topLogo.style.display = 'none';
+    };
     topLogo.style.cssText = `
       width: 120px;
       height: auto;
@@ -339,7 +383,6 @@ class LandingPage {
     // Subtitle
     const subtitle = document.createElement('div');
     subtitle.className = 'subtitle';
-    subtitle.textContent = 'IMMERSIVE ADVENTURE GAME';
     subtitle.style.cssText = `
       font-size: 14px;
       font-weight: 600;
@@ -370,8 +413,7 @@ class LandingPage {
     // Description
     const description = document.createElement('p');
     description.className = 'hero-description';
-    description.textContent = 'Embark on an epic journey through the historic Keshav Narayan Chowk in Patan Durbar Square. Explore ancient architecture, solve intricate puzzles, and uncover hidden treasures while experiencing the rich cultural heritage of Nepal.';
-    description.style.cssText = `
+     description.style.cssText = `
       font-size: 16px;
       line-height: 1.6;
       color: rgba(255, 255, 255, 0.9);
@@ -481,8 +523,14 @@ class LandingPage {
     `;
 
     const image1 = document.createElement('img');
-    image1.src = './pic1.jpg';
+    image1.src = '/pic1.jpg';
     image1.alt = 'Keshav Narayan Chowk';
+    
+    // Handle image1 loading error
+    image1.onerror = () => {
+      console.log('Image1 failed to load, using fallback');
+      image1.style.display = 'none';
+    };
     image1.style.cssText = `
       width: 100%;
       height: 300px;
@@ -492,8 +540,14 @@ class LandingPage {
     `;
 
     const image2 = document.createElement('img');
-    image2.src = './pic2.webp';
+    image2.src = '/pic2.webp';
     image2.alt = 'Patan Durbar Square';
+    
+    // Handle image2 loading error
+    image2.onerror = () => {
+      console.log('Image2 failed to load, using fallback');
+      image2.style.display = 'none';
+    };
     image2.style.cssText = `
       width: 100%;
       height: 300px;

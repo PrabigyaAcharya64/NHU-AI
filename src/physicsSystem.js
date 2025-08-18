@@ -1,7 +1,7 @@
-// Simple Physics System Module for Treasure Hunt
+
 import * as THREE from "three";
 
-// Simple Physics System - No Rapier3D dependencies
+
 class PhysicsSystem {
   constructor(scene, sceneConfig) {
     this.scene = scene;
@@ -24,6 +24,14 @@ class PhysicsSystem {
     this.redCubePosition = { x: 0, y: -0.42, z: 0 };
     this.redCubeRadius = 0.85;
     
+    // Polygon boundary for player movement
+    this.polygonBoundary = [
+      [4.35, -0.1],
+      [0.6, -4.06], 
+      [-4.15, 0.34],
+      [-0.15, 4.5]
+    ];
+    
     // Physics timing
     this.lastUpdate = 0;
     this.fixedTimeStep = 1/60; // 60 FPS
@@ -36,6 +44,7 @@ class PhysicsSystem {
   async initialize() {
     try {
       console.log('Initializing Simple Physics System...');
+      console.log('Physics system initialized with full functionality');
       
       // Set initial player position
       const spawnPos = this.sceneConfig.sceneSettings.initialPosition;
@@ -62,19 +71,113 @@ class PhysicsSystem {
   }
 
   createCollisionBoundaries() {
-    // Create boundary collision objects
-    const boundarySize = 10;
+    // Create boundary collision objects - only ground plane
     const boundaries = [
       // Ground
-      { type: 'plane', normal: { x: 0, y: 1, z: 0 }, point: { x: 0, y: this.groundLevel, z: 0 } },
-      // Walls
-      { type: 'plane', normal: { x: 1, y: 0, z: 0 }, point: { x: boundarySize, y: 0, z: 0 } },
-      { type: 'plane', normal: { x: -1, y: 0, z: 0 }, point: { x: -boundarySize, y: 0, z: 0 } },
-      { type: 'plane', normal: { x: 0, y: 0, z: 1 }, point: { x: 0, y: 0, z: boundarySize } },
-      { type: 'plane', normal: { x: 0, y: 0, z: -1 }, point: { x: 0, y: 0, z: -boundarySize } }
+      { type: 'plane', normal: { x: 0, y: 1, z: 0 }, point: { x: 0, y: this.groundLevel, z: 0 } }
     ];
     
     this.collisionObjects = boundaries;
+  }
+
+  // Check if a point is inside the polygon using ray casting algorithm
+  isPointInPolygon(point) {
+    const x = point.x;
+    const z = point.z; // Using z as y coordinate for 2D polygon
+    const polygon = this.polygonBoundary;
+    
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i][0];
+      const zi = polygon[i][1];
+      const xj = polygon[j][0];
+      const zj = polygon[j][1];
+      
+      if (((zi > z) !== (zj > z)) && (x < (xj - xi) * (z - zi) / (zj - zi) + xi)) {
+        inside = !inside;
+      }
+    }
+    
+    return inside;
+  }
+
+  // Find the closest point on polygon boundary to a given point
+  findClosestPointOnPolygon(point) {
+    const x = point.x;
+    const z = point.z;
+    const polygon = this.polygonBoundary;
+    
+    let closestPoint = { x: polygon[0][0], z: polygon[0][1] };
+    let minDistance = Infinity;
+    
+    // Check distance to each polygon edge
+    for (let i = 0; i < polygon.length; i++) {
+      const p1 = { x: polygon[i][0], z: polygon[i][1] };
+      const p2 = { x: polygon[(i + 1) % polygon.length][0], z: polygon[(i + 1) % polygon.length][1] };
+      
+      const closestOnEdge = this.closestPointOnLineSegment(point, p1, p2);
+      const distance = Math.sqrt((x - closestOnEdge.x) ** 2 + (z - closestOnEdge.z) ** 2);
+      
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestPoint = closestOnEdge;
+      }
+    }
+    
+    return closestPoint;
+  }
+
+  // Find closest point on a line segment to a given point
+  closestPointOnLineSegment(point, lineStart, lineEnd) {
+    const A = point.x - lineStart.x;
+    const B = point.z - lineStart.z;
+    const C = lineEnd.x - lineStart.x;
+    const D = lineEnd.z - lineStart.z;
+    
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = -1;
+    
+    if (lenSq !== 0) param = dot / lenSq;
+    
+    let xx, zz;
+    if (param < 0) {
+      xx = lineStart.x;
+      zz = lineStart.z;
+    } else if (param > 1) {
+      xx = lineEnd.x;
+      zz = lineEnd.z;
+    } else {
+      xx = lineStart.x + param * C;
+      zz = lineStart.z + param * D;
+    }
+    
+    return { x: xx, z: zz };
+  }
+
+  // Check polygon boundary collision
+  checkPolygonBoundaryCollision(position) {
+    const playerRadius = window.PLAYER_RADIUS || 0.3;
+    
+    // Check if player center is inside polygon
+    if (this.isPointInPolygon(position)) {
+      return { collision: false, position: position };
+    }
+    
+    // Player is outside polygon - BLOCK MOVEMENT COMPLETELY
+    // Don't allow any movement outside the polygon boundary
+    
+    console.log('POLYGON BOUNDARY BLOCKED:', {
+      playerPos: { x: position.x.toFixed(3), z: position.z.toFixed(3) },
+      message: 'Movement blocked - cannot pass through polygon boundary'
+    });
+    
+    // Return collision with current position (no movement allowed)
+    return {
+      collision: true,
+      position: this.playerPosition, // Keep current position, don't move
+      pushback: { x: 0, y: 0, z: 0 } // No pushback, just block movement
+    };
   }
 
   // Update physics simulation
@@ -107,23 +210,29 @@ class PhysicsSystem {
         z: this.playerPosition.z + this.playerVelocity.z * dt
       };
       
-      // Check red cube collision before applying movement
-      if (this.wouldCollideWithRedCube(newPosition.x, newPosition.y, newPosition.z)) {
-        console.log('RED CUBE COLLISION DETECTED!');
-        // Stop horizontal movement and apply pushback
-        this.playerVelocity.x = 0;
-        this.playerVelocity.z = 0;
-        this.applyCollisionPushback();
+      // Check polygon boundary collision first
+      const polygonCollision = this.checkPolygonBoundaryCollision(newPosition);
+      if (polygonCollision.collision) {
+        console.log('POLYGON BOUNDARY COLLISION: Preventing movement outside polygon');
+        this.playerPosition = polygonCollision.position;
+        this.playerVelocity.x = polygonCollision.pushback.x;
+        this.playerVelocity.y = polygonCollision.pushback.y;
+        this.playerVelocity.z = polygonCollision.pushback.z;
       } else {
-        // Apply movement if no collision
-        this.playerPosition = newPosition;
+        // Check red cube collision
+        if (this.wouldCollideWithRedCube(newPosition.x, newPosition.y, newPosition.z)) {
+          console.log('RED CUBE COLLISION DETECTED!');
+          // Stop horizontal movement and apply pushback
+          this.playerVelocity.x = 0;
+          this.playerVelocity.z = 0;
+          this.applyCollisionPushback();
+        } else {
+          // Apply movement if no collision
+          this.playerPosition = newPosition;
+        }
       }
       
-      // Check boundary collisions
-      const collisionResult = this.checkCollisions(this.playerPosition);
-      this.playerPosition = collisionResult.position;
-      
-      // Ground collision
+      // Ground collision (always check this last)
       if (this.playerPosition.y <= this.groundLevel + window.PLAYER_RADIUS) {
         this.playerPosition.y = this.groundLevel + window.PLAYER_RADIUS;
         this.playerVelocity.y = 0;
@@ -278,32 +387,6 @@ class PhysicsSystem {
     this.playerVelocity = { ...velocity };
   }
 
-  checkCollisions(newPosition) {
-    let finalPosition = { ...newPosition };
-    
-    // Check ground collision
-    if (finalPosition.y < this.groundLevel + window.PLAYER_RADIUS) {
-      finalPosition.y = this.groundLevel + window.PLAYER_RADIUS;
-      this.playerVelocity.y = 0;
-    }
-    
-    // Check red cube collision
-    const redCubeCollision = this.checkRedCubeCollision(finalPosition);
-    if (redCubeCollision.collision) {
-      finalPosition = redCubeCollision.position;
-      this.playerVelocity.x = redCubeCollision.pushback.x;
-      this.playerVelocity.z = redCubeCollision.pushback.z;
-    }
-    
-    // Check boundary collisions
-    const boundaryCollision = this.checkBoundaryCollision(finalPosition);
-    if (boundaryCollision.collision) {
-      finalPosition = boundaryCollision.position;
-    }
-    
-    return { position: finalPosition };
-  }
-
   checkRedCubeCollision(position) {
     const dx = position.x - this.redCubePosition.x;
     const dy = position.y - this.redCubePosition.y;
@@ -334,36 +417,6 @@ class PhysicsSystem {
     }
     
     return { collision: false, position: position };
-  }
-
-  checkBoundaryCollision(position) {
-    const boundarySize = 10;
-    const playerRadius = window.PLAYER_RADIUS;
-    
-    let finalPosition = { ...position };
-    
-    // X boundaries
-    if (finalPosition.x > boundarySize - playerRadius) {
-      finalPosition.x = boundarySize - playerRadius;
-      this.playerVelocity.x = 0;
-    } else if (finalPosition.x < -boundarySize + playerRadius) {
-      finalPosition.x = -boundarySize + playerRadius;
-      this.playerVelocity.x = 0;
-    }
-    
-    // Z boundaries
-    if (finalPosition.z > boundarySize - playerRadius) {
-      finalPosition.z = boundarySize - playerRadius;
-      this.playerVelocity.z = 0;
-    } else if (finalPosition.z < -boundarySize + playerRadius) {
-      finalPosition.z = -boundarySize + playerRadius;
-      this.playerVelocity.z = 0;
-    }
-    
-    return {
-      collision: !this.vectorsEqual(position, finalPosition),
-      position: finalPosition
-    };
   }
 
   checkGroundCollision() {
@@ -424,6 +477,7 @@ class PhysicsSystem {
   handleVerticalMovement(dt) {
     const keys = window.keys || {};
     
+    // Professional vertical movement with controlled flying
     if (keys['Space']) {
       if (this.isGrounded) {
         this.playerVelocity.y = window.JUMP_FORCE;

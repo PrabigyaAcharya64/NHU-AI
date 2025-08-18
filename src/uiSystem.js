@@ -130,6 +130,7 @@ class HUDManager {
     this.elements = {};
     this.createControlsDisplay();
     this.createCrosshair();
+    this.createProgressBar();
   }
   
   createControlsDisplay() {
@@ -250,6 +251,8 @@ class HUDManager {
       let threshold = 1.0; // default for helloCube
       if (window.isNewCube && window.isNewCube(hitInfo.object)) {
         threshold = 3.0; // clickable for newCube within 3 meters (reduced from 10)
+      } else if (hitInfo.object.name === 'anotherCube2') {
+        threshold = 3.0; // clickable for purple cube within 3 meters
       }
       
       // Check if cube is clickable based on game progression
@@ -260,7 +263,9 @@ class HUDManager {
         intensity = '0.8';
         isInteractive = true;
       } else if (dist < threshold && !isClickable) {
-        color = '#ff6666'; // Red for not yet clickable
+        // Keep normal crosshair color when cube is not clickable
+        // Don't show red crosshair, just use default color
+        color = '#429fb8'; // Default blue color
         intensity = '0.6';
         isInteractive = false;
       }
@@ -356,6 +361,92 @@ class HUDManager {
       this.elements.crosshair.style.transform = 'translate(-50%, -50%) scale(1)';
     }, 100);
   }
+
+  createProgressBar() {
+    const progressContainer = document.createElement('div');
+    progressContainer.id = 'progress-bar-container';
+    progressContainer.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      z-index: 1000;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      color: #429fb8;
+      border: 1px solid rgba(66, 159, 184, 0.3);
+      backdrop-filter: blur(5px);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      min-width: 120px;
+    `;
+
+    const progressText = document.createElement('div');
+    progressText.id = 'progress-text';
+    progressText.style.cssText = `
+      margin-bottom: 4px;
+      font-weight: bold;
+    `;
+
+    const progressBar = document.createElement('div');
+    progressBar.id = 'progress-bar';
+    progressBar.style.cssText = `
+      width: 100%;
+      height: 4px;
+      background: rgba(66, 159, 184, 0.2);
+      border-radius: 2px;
+      overflow: hidden;
+    `;
+
+    const progressFill = document.createElement('div');
+    progressFill.id = 'progress-fill';
+    progressFill.style.cssText = `
+      height: 100%;
+      background: linear-gradient(90deg, #429fb8, #00ff88);
+      border-radius: 2px;
+      width: 0%;
+      transition: width 0.5s ease;
+    `;
+
+    progressBar.appendChild(progressFill);
+    progressContainer.appendChild(progressText);
+    progressContainer.appendChild(progressBar);
+    document.body.appendChild(progressContainer);
+
+    this.elements.progressContainer = progressContainer;
+    this.elements.progressText = progressText;
+    this.elements.progressFill = progressFill;
+
+    // Hide initially
+    this.hideProgressBar();
+  }
+
+  showProgressBar() {
+    if (this.elements.progressContainer) {
+      this.elements.progressContainer.style.opacity = '1';
+      this.elements.progressContainer.style.transform = 'translateY(0)';
+    }
+  }
+
+  hideProgressBar() {
+    if (this.elements.progressContainer) {
+      this.elements.progressContainer.style.opacity = '0';
+      this.elements.progressContainer.style.transform = 'translateY(10px)';
+    }
+  }
+
+  updateProgressBar() {
+    if (!this.elements.progressText || !this.elements.progressFill) return;
+
+    const gameState = window.gameState || { treasuresFound: 0, totalTreasures: 3 };
+    const percentage = (gameState.treasuresFound / gameState.totalTreasures) * 100;
+
+    this.elements.progressText.textContent = `Treasures: ${gameState.treasuresFound}/${gameState.totalTreasures}`;
+    this.elements.progressFill.style.width = `${percentage}%`;
+  }
 }
 
 // --- ENHANCED INTERACTION SYSTEM ---
@@ -423,6 +514,8 @@ class InteractionManager {
       let threshold = 1.0; // default for helloCube
       if (window.isNewCube && window.isNewCube(hitInfo.object)) {
         threshold = 3.0; // clickable for newCube within 3 meters (reduced from 10)
+      } else if (hitInfo.object.name === 'anotherCube2') {
+        threshold = 3.0; // clickable for purple cube within 3 meters
       }
       
       // Check if cube is clickable and within distance
@@ -439,10 +532,8 @@ class InteractionManager {
           }
           return true;
         } else {
-          // Show message that this cube isn't available yet
-          if (window.showProgressionMessage) {
-            window.showProgressionMessage();
-          }
+          // Don't show any message when cube isn't available yet
+          // Just return false without showing progression message
           return false;
         }
       }
@@ -585,4 +676,76 @@ function animateCrosshairMovement() {
   }, 50);
 }
 
-export { RaycastManager, HUDManager, InteractionManager, createCrosshair, updateCrosshairColor, animateCrosshairClick, animateCrosshairMovement };
+// Hint system functions
+function showHint(cubeName) {
+  const cubeHints = window.cubeHints || {};
+  const hint = cubeHints[cubeName];
+  
+  if (!hint) {
+    console.warn('No hint found for cube:', cubeName);
+    return;
+  }
+
+  // Remove existing hint popup
+  const existingHint = document.getElementById('hint-popup');
+  if (existingHint) {
+    existingHint.remove();
+  }
+
+  // Create hint popup
+  const hintPopup = document.createElement('div');
+  hintPopup.id = 'hint-popup';
+  hintPopup.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.95);
+    color: #429fb8;
+    padding: 24px 32px;
+    border-radius: 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 16px;
+    z-index: 20000;
+    border: 2px solid #429fb8;
+    box-shadow: 0 8px 32px rgba(66, 159, 184, 0.3);
+    text-align: center;
+    max-width: 400px;
+    line-height: 1.4;
+  `;
+
+  hintPopup.innerHTML = `
+    <div style="font-weight: bold; font-size: 18px; margin-bottom: 12px; color: #00ff88;">
+      ${hint.title}
+    </div>
+    <div style="margin-bottom: 16px;">
+      ${hint.hint}
+    </div>
+    <button id="close-hint-btn" style="
+      padding: 8px 20px;
+      background: #429fb8;
+      color: #222;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: 'Courier New', monospace;
+    ">Close</button>
+  `;
+
+  document.body.appendChild(hintPopup);
+
+  // Add close functionality
+  document.getElementById('close-hint-btn').onclick = () => {
+    hintPopup.remove();
+  };
+
+  // Auto-close after 8 seconds
+  setTimeout(() => {
+    if (hintPopup.parentNode) {
+      hintPopup.remove();
+    }
+  }, 8000);
+}
+
+export { RaycastManager, HUDManager, InteractionManager, createCrosshair, updateCrosshairColor, animateCrosshairClick, animateCrosshairMovement, showHint };

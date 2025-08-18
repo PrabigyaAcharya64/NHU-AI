@@ -121,8 +121,14 @@ class LoadingScreen {
 
     // Create logo
     const logo = document.createElement('img');
-    logo.src = './Asset 4@4x-8.png';
+    logo.src = encodeURI('/Asset 4@4x-8.png');
     logo.alt = 'Captures Logo';
+    
+    // Handle logo loading error
+    logo.onerror = () => {
+      console.log('Loading screen logo failed to load, using fallback');
+      logo.style.display = 'none';
+    };
     logo.style.cssText = `
       width: 80px;
       height: auto;
