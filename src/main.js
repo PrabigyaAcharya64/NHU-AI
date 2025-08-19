@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { SplatMesh } from "@sparkjsdev/spark";
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/controls/OrbitControls.js';
 import LandingPage from './landingPage.js';
 import LoadingScreen from './loadingScreen.js';
 import { MobileControls } from './mobileControls.js';
@@ -1238,6 +1238,8 @@ function forcePlayerOutOfRedCube(playerPos) {
 
 // Mobile Camera Control System using OrbitControls
 function initializeMobileCameraControls() {
+  console.log('Initializing mobile camera controls...');
+  console.log('OrbitControls available:', typeof OrbitControls !== 'undefined');
   // Only initialize on mobile devices
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
                    (window.innerWidth <= 768 && window.innerHeight <= 1024) ||
@@ -1252,6 +1254,13 @@ function initializeMobileCameraControls() {
   console.log('Mobile device detected, initializing OrbitControls for touch camera');
   
   try {
+    // Check if OrbitControls is available
+    if (typeof OrbitControls === 'undefined') {
+      console.warn('OrbitControls not available - using manual touch controls');
+      setupManualTouchControls();
+      return;
+    }
+    
     // Create OrbitControls instance
     orbitControls = new OrbitControls(camera, renderer.domElement);
     
