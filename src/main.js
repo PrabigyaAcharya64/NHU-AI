@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { SplatMesh } from "@sparkjsdev/spark";
-import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/controls/OrbitControls.js';
+// OrbitControls removed - mobile controls handled by MobileControls class
 import LandingPage from './landingPage.js';
 import LoadingScreen from './loadingScreen.js';
 import { MobileControls } from './mobileControls.js';
@@ -152,7 +152,7 @@ let isGrounded = false, isCrouching = false;
 
 let crosshair, infoPopup;
 let topUIIcons;
-let orbitControls; // OrbitControls for mobile camera
+// Mobile controls are now handled by MobileControls class
 
 
 
@@ -316,7 +316,7 @@ async function init(loadingScreen = null) {
     const isLowEnd = navigator.hardwareConcurrency <= 4;
     
     if (isMobile || isLowEnd) {
-      console.log('Mobile/low-end device detected, applying performance optimizations');
+      // Mobile/low-end device detected, applying performance optimizations
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.shadowMap.enabled = false;
       renderer.antialias = false;
@@ -627,6 +627,9 @@ function createGameObjects() {
     color: 0xff0000
   };
   
+  // Make red cube invisible
+  redCube.visible = false;
+  
   scene.add(redCube);
   window.redCube = redCube;
   window.linkCubes = linkCubes;
@@ -728,7 +731,7 @@ async function initializeSystems() {
     window.GROUND_LEVEL = GROUND_LEVEL;
 
     // Initialize mobile controls
-    console.log('Initializing mobile controls...');
+    // Initializing mobile controls...
     mobileControls = new MobileControls(renderer, camera, scene, sceneConfig);
     window.mobileControls = mobileControls;
 
@@ -850,7 +853,7 @@ function setupEventListeners() {
 
   // Mouse events - only handle if OrbitControls is not active
   document.addEventListener('mousemove', (e) => {
-    if (document.pointerLockElement === document.body && (!orbitControls || !orbitControls.enabled)) {
+    if (document.pointerLockElement === document.body) {
       yaw -= e.movementX * sceneConfig.sceneSettings.mouseSensitivity;
       pitch -= e.movementY * sceneConfig.sceneSettings.mouseSensitivity;
       pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
@@ -890,31 +893,7 @@ function setupEventListeners() {
     }
   });
 
-  // Mobile touch interaction (improved version)
-  document.addEventListener('touchstart', (e) => {
-    // Only handle touch if it's a mobile device and not touching joysticks
-    if (mobileControls && mobileControls.isMobile && mobileControls.isLandscape) {
-      // Check if touch is on a joystick or UI element
-      const touch = e.touches[0];
-      const target = document.elementFromPoint(touch.clientX, touch.clientY);
-      
-      // Skip if touching joysticks, UI elements, or labels
-      if (target && (
-        target.closest('.joystick') || 
-        target.closest('#crosshair') ||
-        target.textContent === 'MOVE' ||
-        target.textContent === 'CAMERA' ||
-        target.style.position === 'absolute' ||
-        target.style.zIndex ||
-        target.tagName === 'BUTTON'
-      )) {
-        return; // Let the joystick/UI handle this touch
-      }
-      
-      // If touching the canvas area, let the setupTouchCamera handle it
-      // Don't prevent default here to avoid conflicts
-    }
-  }, { passive: true }); // Changed to passive: true
+  // Mobile touch interaction is now handled by MobileControls class
 
 
 
@@ -990,18 +969,15 @@ function animate() {
           renderer.domElement.style.visibility = 'visible';
         }
       } catch (mobileError) {
-        console.warn('Mobile controls error:', mobileError);
+        // Silent error handling for professional behavior
       }
     }
     
-    // Update mobile camera position and OrbitControls
-    if (orbitControls && orbitControls.enabled) {
-      try {
-        updateMobileCameraPosition();
-        orbitControls.update();
-      } catch (orbitError) {
-        console.warn('OrbitControls update error:', orbitError);
-      }
+    // Update mobile camera position
+    try {
+      updateMobileCameraPosition();
+    } catch (mobileError) {
+      // Silent error handling for professional behavior
     }
     
     // Render the scene
@@ -1036,7 +1012,7 @@ function getMoveInput() {
         
         // Camera input is now handled by touch drag, no need to store it
       } catch (mobileInputError) {
-        console.warn('Mobile input error:', mobileInputError);
+        // Silent error handling for professional behavior
       }
     }
   } catch (error) {
@@ -1236,208 +1212,22 @@ function forcePlayerOutOfRedCube(playerPos) {
   }
 }
 
-// Mobile Camera Control System using OrbitControls
+// Mobile Camera Control System - Simplified
 function initializeMobileCameraControls() {
-  console.log('Initializing mobile camera controls...');
-  console.log('OrbitControls available:', typeof OrbitControls !== 'undefined');
-  // Only initialize on mobile devices
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-                   (window.innerWidth <= 768 && window.innerHeight <= 1024) ||
-                   ('ontouchstart' in window) ||
-                   (navigator.maxTouchPoints > 0);
-  
-  if (!isMobile) {
-    console.log('Desktop device detected, skipping mobile camera controls');
-    return;
-  }
-  
-  console.log('Mobile device detected, initializing OrbitControls for touch camera');
-  
-  try {
-    // Check if OrbitControls is available
-    if (typeof OrbitControls === 'undefined') {
-      console.warn('OrbitControls not available - using manual touch controls');
-      setupManualTouchControls();
-      return;
-    }
-    
-    // Create OrbitControls instance
-    orbitControls = new OrbitControls(camera, renderer.domElement);
-    
-    // Configure for mobile touch controls - ZOOM PREVENTION
-    orbitControls.enableDamping = true; // Smooth inertia
-    orbitControls.dampingFactor = 0.05;
-    orbitControls.enableZoom = false; // Completely disable zoom to prevent users from seeing outside the polygon
-    orbitControls.enablePan = false; // Disable pan to prevent conflicts
-    orbitControls.enableRotate = true; // Enable rotation (main camera control)
-    
-    // Set zoom limits as additional safeguards
-    orbitControls.minDistance = 1.0; // Minimum distance from target (prevents zooming in too close)
-    orbitControls.maxDistance = 10.0; // Maximum distance from target (prevents zooming out too far)
-    orbitControls.zoomSpeed = 0; // Set zoom speed to zero as additional safeguard
-    
-    // Configure touch controls - NO ZOOM GESTURES
-    orbitControls.touches = {
-      ONE: THREE.TOUCH.ROTATE, // Single touch for rotation only
-      TWO: THREE.TOUCH.NONE    // Disable two-finger gestures (prevents pinch-to-zoom)
-    };
-    
-    // Set rotation limits to prevent camera flipping
-    orbitControls.minPolarAngle = 0.1; // Prevent looking straight up
-    orbitControls.maxPolarAngle = Math.PI - 0.1; // Prevent looking straight down
-    
-    // Set rotation speed for mobile
-    orbitControls.rotateSpeed = 0.5; // Slower rotation for better control
-    
-    // Disable auto-rotation
-    orbitControls.autoRotate = false;
-    
-    // Set target to player position
-    orbitControls.target.set(0, 0, 0);
-    
-    // Add event listeners for UI detection
-    setupMobileTouchEventHandling();
-    
-    console.log('OrbitControls initialized successfully for mobile');
-    
-  } catch (error) {
-    console.error('Failed to initialize OrbitControls:', error);
-    // Fallback to manual touch handling
-    setupManualTouchControls();
-  }
-}
-
-// Manual touch control fallback
-function setupManualTouchControls() {
-  console.log('Using manual touch controls as fallback');
-  
-  const canvas = renderer.domElement;
-  let isDragging = false;
-  let lastTouchX = 0;
-  let lastTouchY = 0;
-  let dragTouchId = null;
-  
-  // Function to check if touch is on UI element
-  const isTouchOnUI = (touch) => {
-    const element = document.elementFromPoint(touch.clientX, touch.clientY);
-    if (!element) return false;
-    
-    return element.closest('.joystick') || 
-           element.closest('[style*="z-index: 1000"]') ||
-           element.textContent === 'MOVE' ||
-           parseInt(window.getComputedStyle(element).zIndex || '0') >= 1000;
-  };
-  
-  // Touch Start
-  canvas.addEventListener('touchstart', (e) => {
-    for (let i = 0; i < e.touches.length; i++) {
-      const touch = e.touches[i];
-      
-      if (!isTouchOnUI(touch) && !isDragging) {
-        isDragging = true;
-        dragTouchId = touch.identifier;
-        lastTouchX = touch.clientX;
-        lastTouchY = touch.clientY;
-        e.preventDefault();
-        break;
-      }
-    }
-  }, { passive: false });
-  
-  // Touch Move
-  canvas.addEventListener('touchmove', (e) => {
-    if (!isDragging || dragTouchId === null) return;
-    
-    const touch = Array.from(e.touches).find(t => t.identifier === dragTouchId);
-    if (!touch) {
-      isDragging = false;
-      dragTouchId = null;
-      return;
-    }
-    
-    const deltaX = touch.clientX - lastTouchX;
-    const deltaY = touch.clientY - lastTouchY;
-    
-    // Apply rotation with sensitivity
-    const sensitivity = 0.005;
-    camera.rotation.order = 'YXZ';
-    camera.rotation.y -= deltaX * sensitivity;
-    camera.rotation.x -= deltaY * sensitivity;
-    camera.rotation.x = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, camera.rotation.x));
-    
-    lastTouchX = touch.clientX;
-    lastTouchY = touch.clientY;
-    e.preventDefault();
-  }, { passive: false });
-  
-  // Touch End
-  canvas.addEventListener('touchend', (e) => {
-    const endedTouch = Array.from(e.changedTouches).find(t => t.identifier === dragTouchId);
-    if (endedTouch) {
-      isDragging = false;
-      dragTouchId = null;
-    }
-  }, { passive: false });
+  // Mobile controls are now handled entirely by the MobileControls class
+  // This function is kept for compatibility but simplified
 }
 
 // Update camera position for mobile controls
 function updateMobileCameraPosition() {
-  if (orbitControls && physicsSystem && physicsSystem.getPlayerPosition) {
+  if (physicsSystem && physicsSystem.getPlayerPosition) {
     const playerPos = physicsSystem.getPlayerPosition();
     
     // Update camera position to follow player
     camera.position.x = playerPos.x;
     camera.position.y = playerPos.y + CAMERA_OFFSET;
     camera.position.z = playerPos.z;
-    
-    // Update OrbitControls target
-    orbitControls.target.set(playerPos.x, playerPos.y, playerPos.z);
   }
-}
-
-// Setup mobile touch event handling for UI detection
-function setupMobileTouchEventHandling() {
-  const canvas = renderer.domElement;
-  
-  // Function to check if touch is on UI element
-  const isTouchOnUI = (touch) => {
-    const element = document.elementFromPoint(touch.clientX, touch.clientY);
-    if (!element) return false;
-    
-    return element.closest('.joystick') || 
-           element.closest('[style*="z-index: 1000"]') ||
-           element.textContent === 'MOVE' ||
-           parseInt(window.getComputedStyle(element).zIndex || '0') >= 1000;
-  };
-  
-  // Override OrbitControls touch handling to respect UI elements
-  const originalOnTouchStart = orbitControls.onTouchStart;
-  orbitControls.onTouchStart = function(event) {
-    // Check if any touch is on UI
-    const hasUITouch = Array.from(event.touches).some(touch => isTouchOnUI(touch));
-    
-    if (hasUITouch) {
-      // Disable OrbitControls for this touch
-      this.enabled = false;
-      return;
-    }
-    
-    // Enable OrbitControls and call original handler
-    this.enabled = true;
-    if (originalOnTouchStart) {
-      originalOnTouchStart.call(this, event);
-    }
-  };
-  
-  // Handle touch end to re-enable controls
-  const originalOnTouchEnd = orbitControls.onTouchEnd;
-  orbitControls.onTouchEnd = function(event) {
-    if (originalOnTouchEnd) {
-      originalOnTouchEnd.call(this, event);
-    }
-    // Re-enable controls after touch ends
-    this.enabled = true;
-  };
 }
 
 // Start game function with better error handling
@@ -1478,10 +1268,8 @@ async function startGame(loadingScreen) {
 
 // Function to toggle between desktop and mobile controls
 function toggleMobileControls() {
-  if (orbitControls) {
-    orbitControls.enabled = !orbitControls.enabled;
-    console.log('Mobile controls:', orbitControls.enabled ? 'enabled' : 'disabled');
-  }
+  // Mobile controls are now handled by MobileControls class
+  // This function is kept for compatibility
 }
 
 // Make functions available globally
