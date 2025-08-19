@@ -55,7 +55,7 @@ const sceneConfig = {
     scale: [20, 10, 20], // Large cube to encompass the playable area
                   color: 0x0066ff, // Blue color for boundary cube
               opacity: 0.3,
-              visible: true,
+              visible: false, // Hide the blue boundary cube
               physicsRadius: 0.5,
               pushStrength: 8.0,
               escapeDistance: 2.0,

@@ -156,7 +156,9 @@ class TouchInput extends THREE.Vector3 {
       this.maxRadius;
 
     this.set(x, y, 0);
-    this.normalize();
+    // Don't normalize - keep the actual joystick values
+    
+    console.log('TouchInput move:', { x, y, left, top });
   };
 
   up = e => {
@@ -171,7 +173,11 @@ class TouchInput extends THREE.Vector3 {
   };
 
   getValues() {
-    return { x: this.x, y: this.y };
+    const values = { x: this.x, y: this.y };
+    if (Math.abs(this.x) > 0.1 || Math.abs(this.y) > 0.1) {
+      console.log('TouchInput values:', values);
+    }
+    return values;
   }
 }
 
@@ -185,8 +191,8 @@ class MobileControls {
     this.physicsSystem = physicsSystem;
     this.interactionManager = interactionManager;
     this.isMobile = this.detectMobile();
-    this.isLandscape = false;
-    this.controlsShown = false;
+    this.isLandscape = true; // Force landscape for testing
+    this.controlsShown = true; // Force controls shown for testing
     this.orientationMessage = null;
     
     if (this.isMobile) {
@@ -195,14 +201,29 @@ class MobileControls {
   }
   
   detectMobile() {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
            (window.innerWidth <= 768 && window.innerHeight <= 1024) ||
            ('ontouchstart' in window) ||
            (navigator.maxTouchPoints > 0);
+    
+    console.log('Mobile detection:', {
+      userAgent: navigator.userAgent,
+      windowSize: { width: window.innerWidth, height: window.innerHeight },
+      hasTouch: 'ontouchstart' in window,
+      maxTouchPoints: navigator.maxTouchPoints,
+      isMobile: isMobile
+    });
+    
+    return isMobile;
   }
   
   initialize() {
     this.createJoysticks();
+    this.showJoysticks(); // Make sure joysticks are visible
+    console.log('Mobile controls initialized:', {
+      isMobile: this.isMobile,
+      joysticks: this.joysticks
+    });
   }
   
   createJoysticks() {
@@ -214,9 +235,15 @@ class MobileControls {
   
   getMovementInput() {
     if (!this.isMobile || !this.joysticks.movement) {
+      console.log('Mobile input check failed:', {
+        isMobile: this.isMobile,
+        hasMovementJoystick: !!this.joysticks.movement
+      });
       return { x: 0, y: 0 };
     }
-    return this.joysticks.movement.getValues();
+    const values = this.joysticks.movement.getValues();
+    console.log('Mobile movement input:', values);
+    return values;
   }
   
   getCameraInput() {
