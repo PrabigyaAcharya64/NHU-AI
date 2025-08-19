@@ -258,7 +258,10 @@ class HUDManager {
       // Check if cube is clickable based on game progression
       const isClickable = window.isCubeClickable && window.isCubeClickable(hitInfo.object);
       
-      if (dist < threshold && isClickable) {
+      // Special case: Show circle crosshair for the first cube (helloCube) even before game starts
+      const isFirstCube = hitInfo.object.name === 'helloCube' && hitInfo.object.userData.level === 0;
+      
+      if (dist < threshold && (isClickable || isFirstCube)) {
         color = '#ffaa00'; // Yellow for interactive
         intensity = '0.8';
         isInteractive = true;

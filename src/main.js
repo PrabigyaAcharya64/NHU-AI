@@ -919,7 +919,7 @@ function isNewCube(cube) {
 }
 
 function advanceGameState() {
-  if (gameState.currentLevel < cubeProgression.length - 1) {
+  if (gameState.currentLevel < cubeProgression.length) {
     gameState.currentLevel++;
     gameState.completedLevels.push(gameState.currentLevel - 1);
     gameState.treasuresFound++;
