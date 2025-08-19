@@ -1,157 +1,180 @@
-// Mobile Controls Module
+console.clear();
+
 import * as THREE from "three";
 
-// Mobile Movement Joystick System
-class MobileJoystick {
-  constructor(container, options = {}) {
-    this.container = container;
-    this.options = {
-      size: options.size || 80,
-      color: options.color || '#ffffff',
-      backgroundColor: options.backgroundColor || 'rgba(255, 255, 255, 0.2)',
-      borderColor: options.borderColor || 'rgba(255, 255, 255, 0.3)',
-      ...options
-    };
+const {
+  devicePixelRatio,
+  innerHeight: viewportHeight,
+  innerWidth: viewportWidth
+} = window;
+
+class TouchInput extends THREE.Vector3 {
+  constructor(options) {
+    super();
     
-    this.isActive = false;
-    this.centerX = 0;
-    this.centerY = 0;
-    this.currentX = 0;
-    this.currentY = 0;
-    this.maxDistance = this.options.size / 2 - 15;
-    
-    this.createElements();
-    this.bindEvents();
-  }
-  
-  createElements() {
-    // Container
-    this.element = document.createElement('div');
-    this.element.className = 'joystick';
-    this.element.style.cssText = `
-      position: absolute;
-      width: ${this.options.size}px;
-      height: ${this.options.size}px;
-      border-radius: 50%;
-      background: ${this.options.backgroundColor};
-      border: 2px solid ${this.options.borderColor};
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      touch-action: none;
-      user-select: none;
-      z-index: 1000;
-    `;
-    
-    // Joystick handle
-    this.handle = document.createElement('div');
-    this.handle.style.cssText = `
-      width: 45px;
-      height: 45px;
-      border-radius: 50%;
-      background: ${this.options.color};
-      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
-      transition: transform 0.1s ease;
-    `;
-    
-    this.element.appendChild(this.handle);
-    this.container.appendChild(this.element);
-  }
-  
-  bindEvents() {
-    const events = ['touchstart', 'mousedown'];
-    const moveEvents = ['touchmove', 'mousemove'];
-    const endEvents = ['touchend', 'mouseup'];
-    
-    events.forEach(event => {
-      this.element.addEventListener(event, this.onStart.bind(this), { passive: false });
-    });
-    
-    moveEvents.forEach(event => {
-      document.addEventListener(event, this.onMove.bind(this), { passive: false });
-    });
-    
-    endEvents.forEach(event => {
-      document.addEventListener(event, this.onEnd.bind(this), { passive: false });
-    });
-  }
-  
-  onStart(e) {
-    e.preventDefault();
-    this.isActive = true;
-    const rect = this.element.getBoundingClientRect();
-    this.centerX = rect.left + rect.width / 2;
-    this.centerY = rect.top + rect.height / 2;
-    this.updatePosition(e);
-  }
-  
-  onMove(e) {
-    if (!this.isActive) return;
-    e.preventDefault();
-    this.updatePosition(e);
-  }
-  
-  onEnd(e) {
-    if (!this.isActive) return;
-    e.preventDefault();
-    this.isActive = false;
-    this.resetPosition();
-  }
-  
-  updatePosition(e) {
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    
-    const deltaX = clientX - this.centerX;
-    const deltaY = clientY - this.centerY;
-    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    
-    if (distance > this.maxDistance) {
-      const angle = Math.atan2(deltaY, deltaX);
-      this.currentX = Math.cos(angle) * this.maxDistance;
-      this.currentY = Math.sin(angle) * this.maxDistance;
+    const circle = document.createElement('div');
+    if (options.left !== undefined) {
+      circle.style.cssText = `
+        background: rgba(126, 126, 126, 0.5);
+        border: #444 solid medium;
+        border-radius: 50%;
+        bottom: 35px;
+        height: 80px;
+        left: 35px;
+        position: absolute;
+        width: 80px;
+        z-index: 1;
+      `;
+    } else if (options.right !== undefined) {
+      circle.style.cssText = `
+        background: rgba(126, 126, 126, 0.5);
+        border: #444 solid medium;
+        border-radius: 50%;
+        bottom: 35px;
+        height: 80px;
+        position: absolute;
+        right: 35px;
+        width: 80px;
+        z-index: 1;      
+      `;
     } else {
-      this.currentX = deltaX;
-      this.currentY = deltaY;
+      circle.style.cssText = `
+        background: rgba(126, 126, 126, 0.5);
+        border: #444 solid medium;
+        border-radius: 50%;
+        bottom: 35px;
+        height: 80px;
+        left: 50%;
+        position: absolute;
+        transform: translateX(-50%);
+        width: 80px;
+        z-index: 1;
+      `;
     }
     
-    this.handle.style.transform = `translate(${this.currentX}px, ${this.currentY}px)`;
-  }
-  
-  resetPosition() {
-    this.currentX = 0;
-    this.currentY = 0;
-    this.handle.style.transform = 'translate(0px, 0px)';
-  }
-  
-  getValues() {
-    if (!this.isActive) return { x: 0, y: 0 };
-    
-    const x = this.currentX / this.maxDistance;
-    const y = -this.currentY / this.maxDistance;
-    
-    const deadzone = 0.15;
-    const magnitude = Math.sqrt(x * x + y * y);
-    
-    if (magnitude < deadzone) {
-      return { x: 0, y: 0 };
-    }
-    
-    const normalizedMagnitude = (magnitude - deadzone) / (1 - deadzone);
-    const smoothMagnitude = normalizedMagnitude * normalizedMagnitude * 0.7;
-    
-    return {
-      x: (x / magnitude) * smoothMagnitude,
-      y: (y / magnitude) * smoothMagnitude
+    const thumb = document.createElement('div');
+    const threshold = document.createElement('div');
+    thumb.style.cssText = `
+      background-color: #fff;
+      border-radius: 50%;
+      height: 40px;
+      left: 17px;
+      position: absolute;
+      top: 17px;
+      width: 40px;
+      z-index: 2;
+    `;
+    threshold.style.cssText = `
+      background-color: rgba(255, 255, 255, .1);
+      border-radius: 50%;
+      height: 120px;
+      left: -40px;
+      margin: auto;
+      position: absolute;
+      top: -40px;
+      width: 120px;
+      z-index: 1
+    `;
+    thumb.appendChild(threshold);
+    circle.appendChild(thumb);
+    document.body.appendChild(circle);
+    this.domBg = circle;
+    this.domElement = thumb;
+    this.maxRadius = options.maxRadius || 40;
+    this.maxRadiusSquared = this.maxRadius * this.maxRadius;
+    this.origin = {
+      left: this.domElement.offsetLeft,
+      top: this.domElement.offsetTop
     };
+    this.isMouseDown = false;
+
+    if ('ontouchstart' in window) {
+      this.domElement.addEventListener('touchstart', this.tap);
+      this.domElement.addEventListener('touchmove', this.move);
+      this.domElement.addEventListener('touchend', this.up);
+    } else {
+      this.domElement.addEventListener('mousedown', this.tap);
+      this.domElement.addEventListener('mousemove', this.move);
+      this.domElement.addEventListener('mouseup', this.up);
+      this.domElement.addEventListener('mouseout', this.up);
+    }
+    
+    this.up(new Event(''));
   }
-  
-  destroy() {
-    this.element.remove();
+
+  set visible(mode) {
+    const setting = mode ? 'block' : 'none';
+    this.domElement.style.display = setting;
+    this.domBg.style.display = setting;
+  }
+
+  getMousePosition(event) {
+    let clientX = event.targetTouches
+      ? event.targetTouches[0].pageX
+      : event.clientX;
+    let clientY = event.targetTouches
+      ? event.targetTouches[0].pageY
+      : event.clientY;
+    return { x: clientX, y: clientY };
+  }
+
+  tap = e => {
+    const event = e || window.event;
+    event.preventDefault();
+    
+    this.isMouseDown = true;
+    this.offset = this.getMousePosition(event);
+  };
+
+  move = e => {
+    if (!this.isMouseDown) return;
+
+    const event = e || window.event;
+    event.preventDefault();
+
+    const mouse = this.getMousePosition(event);
+    let left = mouse.x - this.offset.x;
+    let top = mouse.y - this.offset.y;
+
+    const sqMag = left * left + top * top;
+    if (sqMag > this.maxRadiusSquared) {
+      const magnitude = Math.sqrt(sqMag);
+      left /= magnitude;
+      top /= magnitude;
+      left *= this.maxRadius;
+      top *= this.maxRadius;
+    }
+
+    this.domElement.style.top = `${top + this.domElement.clientHeight / 2}px`;
+    this.domElement.style.left = `${left + this.domElement.clientWidth / 2}px`;
+
+    const x =
+      (left - this.origin.left + this.domElement.clientWidth / 2) /
+      this.maxRadius;
+    const y =
+      (top - this.origin.top + this.domElement.clientHeight / 2) /
+      this.maxRadius;
+
+    this.set(x, y, 0);
+    this.normalize();
+  };
+
+  up = e => {
+    const event = e || window.event;
+    event.preventDefault();
+
+    this.isMouseDown = false;
+
+    this.domElement.style.top = `${this.origin.top}px`;
+    this.domElement.style.left = `${this.origin.left}px`;
+    this.set(0, 0, 0);
+  };
+
+  getValues() {
+    return { x: this.x, y: this.y };
   }
 }
 
-// Mobile Controls Manager
 class MobileControls {
   constructor(renderer, camera, scene, sceneConfig, raycastManager = null, physicsSystem = null, interactionManager = null) {
     this.renderer = renderer;
@@ -163,17 +186,8 @@ class MobileControls {
     this.interactionManager = interactionManager;
     this.isMobile = this.detectMobile();
     this.isLandscape = false;
-    this.joysticks = {};
-    this.orientationMessage = null;
     this.controlsShown = false;
-    this.touchState = {
-      isDragging: false,
-      lastTouchX: 0,
-      lastTouchY: 0,
-      dragTouchId: null,
-      isTap: false,
-      tapStartTime: 0
-    };
+    this.orientationMessage = null;
     
     if (this.isMobile) {
       this.initialize();
@@ -188,357 +202,28 @@ class MobileControls {
   }
   
   initialize() {
-    this.createOrientationMessage();
     this.createJoysticks();
-    this.bindOrientationEvents();
-    this.setupTouchHandling();
-    this.checkOrientation();
-    this.startPeriodicOrientationCheck();
-  }
-  
-  createOrientationMessage() {
-    this.orientationMessage = document.createElement('div');
-    this.orientationMessage.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.8);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 9999;
-      color: white;
-      font-family: 'Poppins', sans-serif;
-      font-size: 18px;
-      text-align: center;
-      padding: 20px;
-      pointer-events: auto;
-    `;
-    this.orientationMessage.innerHTML = `
-      <div>
-        <div style="font-size: 48px; margin-bottom: 20px;">📱</div>
-        <div>Please rotate your device to landscape mode</div>
-        <div style="font-size: 14px; margin-top: 10px; opacity: 0.7;">For the best gaming experience</div>
-        <button id="continue-button" style="
-          margin-top: 20px;
-          padding: 10px 20px;
-          background: #429fb8;
-          color: white;
-          border: none;
-          border-radius: 5px;
-          font-family: 'Poppins', sans-serif;
-          font-size: 16px;
-          cursor: pointer;
-        ">Continue Anyway</button>
-      </div>
-    `;
-    
-    this.orientationMessage.addEventListener('click', (e) => {
-      if (e.target.id === 'continue-button') {
-        this.isLandscape = true;
-        this.orientationMessage.style.display = 'none';
-        this.showJoysticks();
-        this.controlsShown = true;
-      }
-    });
-    
-    setTimeout(() => {
-      if (this.orientationMessage && this.orientationMessage.style.display !== 'none') {
-        this.orientationMessage.style.display = 'none';
-        this.isLandscape = true;
-        this.showJoysticks();
-        this.controlsShown = true;
-      }
-    }, 5000);
-    
-    document.body.appendChild(this.orientationMessage);
   }
   
   createJoysticks() {
-    this.joysticks.movement = new MobileJoystick(document.body, {
-      size: 120,
-      color: '#4CAF50',
-      backgroundColor: 'rgba(76, 175, 80, 0.3)',
-      borderColor: 'rgba(76, 175, 80, 0.6)'
-    });
-    
-    this.positionJoysticks();
-    this.createFullscreenButton();
-  }
-  
-  positionJoysticks() {
-    const margin = 30;
-    
-    this.joysticks.movement.element.style.left = `${margin}px`;
-    this.joysticks.movement.element.style.bottom = `${margin}px`;
-    
-    this.addJoystickLabels();
-  }
-  
-  addJoystickLabels() {
-    const movementLabel = document.createElement('div');
-    movementLabel.textContent = 'MOVE';
-    movementLabel.style.cssText = `
-      position: absolute;
-      left: 30px;
-      bottom: 160px;
-      color: #4CAF50;
-      font-family: 'Poppins', sans-serif;
-      font-size: 12px;
-      font-weight: 500;
-      z-index: 1000;
-    `;
-    document.body.appendChild(movementLabel);
-  }
-  
-  createFullscreenButton() {
-    this.fullscreenButton = document.createElement('div');
-    this.fullscreenButton.className = 'joystick';
-    this.fullscreenButton.textContent = '⛶';
-    this.fullscreenButton.style.cssText = `
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      width: 40px;
-      height: 40px;
-      background: rgba(0, 0, 0, 0.5);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-family: 'Poppins', sans-serif;
-      font-size: 16px;
-      font-weight: 600;
-      z-index: 1000;
-      touch-action: none;
-      user-select: none;
-      transition: transform 0.1s ease;
-    `;
-    
-    this.fullscreenButton.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      this.fullscreenButton.style.transform = 'scale(0.95)';
-      this.toggleFullscreen();
-    }, { passive: false });
-    
-    this.fullscreenButton.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      this.fullscreenButton.style.transform = 'scale(1)';
-    }, { passive: false });
-    
-    document.body.appendChild(this.fullscreenButton);
-  }
-  
-  toggleFullscreen() {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen();
-    }
-  }
-  
-  setupTouchHandling() {
-    const canvas = this.renderer.domElement;
-    
-    const isTouchOnUI = (touch) => {
-      const element = document.elementFromPoint(touch.clientX, touch.clientY);
-      if (!element) return false;
-      
-      return element.closest('.joystick') || 
-             element.closest('[style*="z-index: 1000"]') ||
-             element.textContent === 'MOVE' ||
-             parseInt(window.getComputedStyle(element).zIndex || '0') >= 1000;
+    this.joysticks = {
+      movement: new TouchInput({ left: true }),
+      rotation: new TouchInput({ right: true })
     };
-    
-    // Touch Start - Handle both camera rotation and tap detection
-    canvas.addEventListener('touchstart', (e) => {
-      for (let i = 0; i < e.touches.length; i++) {
-        const touch = e.touches[i];
-        
-        if (!isTouchOnUI(touch) && !this.touchState.isDragging) {
-          this.touchState.isDragging = true;
-          this.touchState.dragTouchId = touch.identifier;
-          this.touchState.lastTouchX = touch.clientX;
-          this.touchState.lastTouchY = touch.clientY;
-          this.touchState.isTap = true;
-          this.touchState.tapStartTime = Date.now();
-          e.preventDefault();
-          break;
-        }
-      }
-    }, { passive: false });
-    
-    // Touch Move - Camera rotation
-    canvas.addEventListener('touchmove', (e) => {
-      if (!this.touchState.isDragging || this.touchState.dragTouchId === null) return;
-      
-      const touch = Array.from(e.touches).find(t => t.identifier === this.touchState.dragTouchId);
-      if (!touch) {
-        this.resetTouchState();
-        return;
-      }
-      
-      const deltaX = touch.clientX - this.touchState.lastTouchX;
-      const deltaY = touch.clientY - this.touchState.lastTouchY;
-      
-      // If movement is significant, it's not a tap
-      const movement = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      if (movement > 10) {
-        this.touchState.isTap = false;
-      }
-      
-      // Apply camera rotation
-      const sensitivity = 0.005;
-      if (this.camera) {
-        this.camera.rotation.order = 'YXZ';
-        this.camera.rotation.y -= deltaX * sensitivity;
-        this.camera.rotation.x -= deltaY * sensitivity;
-        this.camera.rotation.x = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, this.camera.rotation.x));
-      }
-      
-      this.touchState.lastTouchX = touch.clientX;
-      this.touchState.lastTouchY = touch.clientY;
-      e.preventDefault();
-    }, { passive: false });
-    
-    // Touch End - Handle tap for popup
-    canvas.addEventListener('touchend', (e) => {
-      const endedTouch = Array.from(e.changedTouches).find(t => t.identifier === this.touchState.dragTouchId);
-      if (!endedTouch) return;
-      
-      const touchDuration = Date.now() - this.touchState.tapStartTime;
-      
-      // If it was a tap (short duration and minimal movement), handle as click
-      if (this.touchState.isTap && touchDuration < 300) {
-        this.handleTouchClick(endedTouch);
-      }
-      
-      this.resetTouchState();
-      e.preventDefault();
-    }, { passive: false });
-    
-    canvas.addEventListener('touchcancel', (e) => {
-      const cancelledTouch = Array.from(e.changedTouches).find(t => t.identifier === this.touchState.dragTouchId);
-      if (cancelledTouch) {
-        this.resetTouchState();
-      }
-    }, { passive: false });
-  }
-  
-  resetTouchState() {
-    this.touchState.isDragging = false;
-    this.touchState.dragTouchId = null;
-    this.touchState.isTap = false;
-  }
-  
-  handleTouchClick(touch) {
-    try {
-      const canvas = this.renderer.domElement;
-      const rect = canvas.getBoundingClientRect();
-      
-      const mouseX = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
-      const mouseY = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
-      
-      if (this.raycastManager && this.raycastManager.mouse) {
-        this.raycastManager.mouse.set(mouseX, mouseY);
-        
-        const hitInfo = this.raycastManager.update();
-        
-        if (this.interactionManager && hitInfo) {
-          const playerPos = this.physicsSystem ? 
-            this.physicsSystem.getPlayerPosition() : 
-            { x: 0, y: 0, z: 0 };
-          
-          this.interactionManager.handleClick(hitInfo, playerPos);
-        }
-      }
-      
-      if (typeof window.handleCanvasClick === 'function') {
-        const event = { clientX: touch.clientX, clientY: touch.clientY };
-        window.handleCanvasClick(event);
-      }
-    } catch (error) {
-      // Silent error handling for professional behavior
-    }
-  }
-  
-  bindOrientationEvents() {
-    window.addEventListener('orientationchange', () => {
-      setTimeout(() => this.checkOrientation(), 100);
-    });
-    
-    window.addEventListener('resize', () => {
-      this.checkOrientation();
-    });
-  }
-  
-  checkOrientation() {
-    const isLandscape = window.innerWidth > window.innerHeight;
-    
-    if (isLandscape !== this.isLandscape) {
-      this.isLandscape = isLandscape;
-      
-      if (this.orientationMessage) {
-        this.orientationMessage.style.display = isLandscape ? 'none' : 'flex';
-      }
-      
-      if (isLandscape) {
-        this.showJoysticks();
-        this.controlsShown = true;
-        setTimeout(() => {
-          this.showJoysticks();
-        }, 100);
-      } else {
-        this.hideJoysticks();
-        this.controlsShown = false;
-      }
-    }
-  }
-  
-  forceOrientationCheck() {
-    setTimeout(() => {
-      this.checkOrientation();
-    }, 500);
-  }
-  
-  startPeriodicOrientationCheck() {
-    setInterval(() => {
-      if (this.isMobile) {
-        this.checkOrientation();
-      }
-    }, 1000);
-  }
-  
-  showJoysticks() {
-    if (this.joysticks.movement) {
-      this.joysticks.movement.element.style.display = 'flex';
-    }
-    if (this.fullscreenButton) {
-      this.fullscreenButton.style.display = 'flex';
-    }
-  }
-  
-  hideJoysticks() {
-    if (this.joysticks.movement) {
-      this.joysticks.movement.element.style.display = 'none';
-    }
-    if (this.fullscreenButton) {
-      this.fullscreenButton.style.display = 'none';
-    }
   }
   
   getMovementInput() {
-    if (!this.isMobile || !this.isLandscape || !this.joysticks.movement) {
+    if (!this.isMobile || !this.joysticks.movement) {
       return { x: 0, y: 0 };
     }
     return this.joysticks.movement.getValues();
   }
   
   getCameraInput() {
-    return { x: 0, y: 0 };
+    if (!this.isMobile || !this.joysticks.rotation) {
+      return { x: 0, y: 0 };
+    }
+    return this.joysticks.rotation.getValues();
   }
   
   updateManagers(raycastManager, physicsSystem, interactionManager) {
@@ -547,17 +232,45 @@ class MobileControls {
     this.interactionManager = interactionManager;
   }
   
-  destroy() {
-    if (this.orientationMessage) {
-      this.orientationMessage.remove();
-    }
-    if (this.fullscreenButton) {
-      this.fullscreenButton.remove();
-    }
+  // Compatibility methods for main.js
+  checkOrientation() {
+    // Simple orientation check
+    const isLandscape = window.innerWidth > window.innerHeight;
+    this.isLandscape = isLandscape;
+  }
+  
+  forceOrientationCheck() {
+    setTimeout(() => {
+      this.checkOrientation();
+    }, 500);
+  }
+  
+  showJoysticks() {
     if (this.joysticks.movement) {
-      this.joysticks.movement.destroy();
+      this.joysticks.movement.visible = true;
+    }
+    if (this.joysticks.rotation) {
+      this.joysticks.rotation.visible = true;
+    }
+  }
+  
+  hideJoysticks() {
+    if (this.joysticks.movement) {
+      this.joysticks.movement.visible = false;
+    }
+    if (this.joysticks.rotation) {
+      this.joysticks.rotation.visible = false;
+    }
+  }
+  
+  destroy() {
+    if (this.joysticks.movement) {
+      this.joysticks.movement.domBg.remove();
+    }
+    if (this.joysticks.rotation) {
+      this.joysticks.rotation.domBg.remove();
     }
   }
 }
 
-export { MobileControls, MobileJoystick };
+export { MobileControls, TouchInput };
