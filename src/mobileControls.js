@@ -267,11 +267,9 @@ class MobileJoystick {
     this.positionJoysticks();
     this.createFullscreenButton();
     
-    // Setup simplified touch camera controls
-    this.setupTouchCamera();
-    
-    // Alternative: If the above doesn't work, uncomment this line:
-    // this.setupSimpleTouchCamera();
+    // Note: Touch camera controls are now handled by OrbitControls in main.js
+    // The old setupTouchCamera() method is disabled for better compatibility
+    console.log('Mobile joysticks created - camera controls handled by OrbitControls');
   }
   
   positionJoysticks() {

@@ -733,19 +733,24 @@ function showHint(cubeName) {
     ">Close</button>
   `;
 
-  document.body.appendChild(hintPopup);
-
-  // Add close functionality
-  document.getElementById('close-hint-btn').onclick = () => {
-    hintPopup.remove();
-  };
-
-  // Auto-close after 8 seconds
-  setTimeout(() => {
-    if (hintPopup.parentNode) {
+  // Use popup manager if available, otherwise fallback to manual handling
+  if (window.popupManager) {
+    window.popupManager.showPopup(hintPopup, 'hint-popup');
+  } else {
+    document.body.appendChild(hintPopup);
+    
+    // Add close functionality
+    document.getElementById('close-hint-btn').onclick = () => {
       hintPopup.remove();
-    }
-  }, 8000);
+    };
+
+    // Auto-close after 8 seconds
+    setTimeout(() => {
+      if (hintPopup.parentNode) {
+        hintPopup.remove();
+      }
+    }, 8000);
+  }
 }
 
 export { RaycastManager, HUDManager, InteractionManager, createCrosshair, updateCrosshairColor, animateCrosshairClick, animateCrosshairMovement, showHint };

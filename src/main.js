@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { SplatMesh } from "@sparkjsdev/spark";
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import LandingPage from './landingPage.js';
 import LoadingScreen from './loadingScreen.js';
 import { MobileControls } from './mobileControls.js';
@@ -151,6 +152,7 @@ let isGrounded = false, isCrouching = false;
 
 let crosshair, infoPopup;
 let topUIIcons;
+let orbitControls; // OrbitControls for mobile camera
 
 
 
@@ -175,6 +177,91 @@ let gameState = {
   treasuresFound: 0,   // Track number of treasures found
   totalTreasures: 3    // Total number of treasures in the game
 };
+
+// Popup Management System
+class PopupManager {
+  constructor() {
+    this.activePopups = new Set();
+    this.originalCursorStyle = null;
+  }
+
+  showPopup(popupElement, id = null) {
+    // Store original cursor style if this is the first popup
+    if (this.activePopups.size === 0) {
+      this.originalCursorStyle = document.body.style.cursor;
+    }
+
+    // Add popup to tracking
+    if (id) {
+      popupElement.dataset.popupId = id;
+    }
+    this.activePopups.add(popupElement);
+
+    // Exit pointer lock if active (to show cursor)
+    if (document.pointerLockElement === document.body) {
+      document.exitPointerLock();
+    }
+
+    // Show cursor
+    document.body.style.cursor = 'default';
+
+    // Add to document
+    document.body.appendChild(popupElement);
+
+    // Auto-close functionality for close buttons
+    const closeButtons = popupElement.querySelectorAll('button[id*="close"], button[onclick*="remove"]');
+    closeButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        this.closePopup(popupElement);
+      });
+    });
+
+    // Auto-close after 8 seconds if no close button found
+    if (closeButtons.length === 0) {
+      setTimeout(() => {
+        this.closePopup(popupElement);
+      }, 8000);
+    }
+
+    return popupElement;
+  }
+
+  closePopup(popupElement) {
+    // Remove from tracking
+    this.activePopups.delete(popupElement);
+
+    // Remove from DOM
+    if (popupElement.parentNode) {
+      popupElement.remove();
+    }
+
+    // Hide cursor if no more popups
+    if (this.activePopups.size === 0) {
+      this.hideCursor();
+    }
+  }
+
+  closeAllPopups() {
+    const popups = Array.from(this.activePopups);
+    popups.forEach(popup => this.closePopup(popup));
+  }
+
+  hideCursor() {
+    // Restore original cursor style or hide cursor if in game mode
+    if (document.pointerLockElement === document.body) {
+      document.body.style.cursor = 'none';
+    } else if (this.originalCursorStyle) {
+      document.body.style.cursor = this.originalCursorStyle;
+    }
+  }
+
+  getActivePopupCount() {
+    return this.activePopups.size;
+  }
+}
+
+// Global popup manager instance
+const popupManager = new PopupManager();
 
 // Define the progression order
 const cubeProgression = [
@@ -223,6 +310,22 @@ async function init(loadingScreen = null) {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    
+    // Device-specific optimizations for mobile
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const isLowEnd = navigator.hardwareConcurrency <= 4;
+    
+    if (isMobile || isLowEnd) {
+      console.log('Mobile/low-end device detected, applying performance optimizations');
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = false;
+      renderer.antialias = false;
+    } else {
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.shadowMap.enabled = true;
+      renderer.antialias = true;
+    }
+    
     document.body.appendChild(renderer.domElement);
 
     // Add lighting
@@ -655,6 +758,7 @@ async function initializeSystems() {
     window.showHint = showHint;
     window.cubeHints = cubeHints;
     window.gameState = gameState;
+    window.popupManager = popupManager; // Make popup manager globally available
     window.updateProgressBar = () => {
       if (hudManager && hudManager.updateProgressBar) {
         hudManager.updateProgressBar();
@@ -675,6 +779,9 @@ async function initializeSystems() {
     console.log('Initializing top UI icons...');
     topUIIcons = new TopUIIcons();
     window.topUIIcons = topUIIcons;
+    
+    // Initialize mobile camera controls
+    initializeMobileCameraControls();
     
     console.log('All systems initialized successfully');
     
@@ -697,8 +804,14 @@ function setupEventListeners() {
     }
     
     if (e.code === 'Escape') {
-      document.exitPointerLock();
-      document.body.style.cursor = 'default';
+      // Close all popups first
+      if (popupManager && popupManager.getActivePopupCount() > 0) {
+        popupManager.closeAllPopups();
+      } else {
+        // If no popups, exit pointer lock
+        document.exitPointerLock();
+        document.body.style.cursor = 'default';
+      }
     }
 
     // UI shortcuts
@@ -735,9 +848,9 @@ function setupEventListeners() {
     keys[e.code] = false;
   });
 
-  // Mouse events
+  // Mouse events - only handle if OrbitControls is not active
   document.addEventListener('mousemove', (e) => {
-    if (document.pointerLockElement === document.body) {
+    if (document.pointerLockElement === document.body && (!orbitControls || !orbitControls.enabled)) {
       yaw -= e.movementX * sceneConfig.sceneSettings.mouseSensitivity;
       pitch -= e.movementY * sceneConfig.sceneSettings.mouseSensitivity;
       pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
@@ -747,6 +860,22 @@ function setupEventListeners() {
   });
 
   document.addEventListener('click', (e) => {
+    // Check if there are active popups
+    if (popupManager && popupManager.getActivePopupCount() > 0) {
+      // Check if click is outside any popup
+      const clickedElement = e.target;
+      const isClickInsidePopup = clickedElement.closest('[data-popup-id]') || 
+                                 clickedElement.closest('#info-popup') || 
+                                 clickedElement.closest('#hint-popup');
+      
+      if (!isClickInsidePopup) {
+        // Click outside popup - close all popups
+        popupManager.closeAllPopups();
+        return;
+      }
+    }
+    
+    // Normal game click handling
     if (document.pointerLockElement !== document.body) {
       document.body.requestPointerLock();
       document.body.style.cursor = 'none';
@@ -865,6 +994,16 @@ function animate() {
       }
     }
     
+    // Update mobile camera position and OrbitControls
+    if (orbitControls && orbitControls.enabled) {
+      try {
+        updateMobileCameraPosition();
+        orbitControls.update();
+      } catch (orbitError) {
+        console.warn('OrbitControls update error:', orbitError);
+      }
+    }
+    
     // Render the scene
     if (renderer && scene && camera) {
       try {
@@ -968,8 +1107,9 @@ function showInfoPopup(title, url) {
     `;
     
     infoPopup.innerHTML = `<div style="font-weight:bold;font-size:22px;margin-bottom:10px;">${title}</div><div>${url}</div><br><button id="close-popup-btn" style="margin-top:10px;padding:6px 18px;background:${color};color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;">Close</button>`;
-    document.body.appendChild(infoPopup);
-    document.getElementById('close-popup-btn').onclick = () => infoPopup.remove();
+    
+    // Use popup manager to show popup with automatic cursor management
+    popupManager.showPopup(infoPopup, 'info-popup');
   } catch (error) {
     console.error('Show info popup error:', error);
   }
@@ -1096,6 +1236,201 @@ function forcePlayerOutOfRedCube(playerPos) {
   }
 }
 
+// Mobile Camera Control System using OrbitControls
+function initializeMobileCameraControls() {
+  // Only initialize on mobile devices
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                   (window.innerWidth <= 768 && window.innerHeight <= 1024) ||
+                   ('ontouchstart' in window) ||
+                   (navigator.maxTouchPoints > 0);
+  
+  if (!isMobile) {
+    console.log('Desktop device detected, skipping mobile camera controls');
+    return;
+  }
+  
+  console.log('Mobile device detected, initializing OrbitControls for touch camera');
+  
+  try {
+    // Create OrbitControls instance
+    orbitControls = new OrbitControls(camera, renderer.domElement);
+    
+    // Configure for mobile touch controls - ZOOM PREVENTION
+    orbitControls.enableDamping = true; // Smooth inertia
+    orbitControls.dampingFactor = 0.05;
+    orbitControls.enableZoom = false; // Completely disable zoom to prevent users from seeing outside the polygon
+    orbitControls.enablePan = false; // Disable pan to prevent conflicts
+    orbitControls.enableRotate = true; // Enable rotation (main camera control)
+    
+    // Set zoom limits as additional safeguards
+    orbitControls.minDistance = 1.0; // Minimum distance from target (prevents zooming in too close)
+    orbitControls.maxDistance = 10.0; // Maximum distance from target (prevents zooming out too far)
+    orbitControls.zoomSpeed = 0; // Set zoom speed to zero as additional safeguard
+    
+    // Configure touch controls - NO ZOOM GESTURES
+    orbitControls.touches = {
+      ONE: THREE.TOUCH.ROTATE, // Single touch for rotation only
+      TWO: THREE.TOUCH.NONE    // Disable two-finger gestures (prevents pinch-to-zoom)
+    };
+    
+    // Set rotation limits to prevent camera flipping
+    orbitControls.minPolarAngle = 0.1; // Prevent looking straight up
+    orbitControls.maxPolarAngle = Math.PI - 0.1; // Prevent looking straight down
+    
+    // Set rotation speed for mobile
+    orbitControls.rotateSpeed = 0.5; // Slower rotation for better control
+    
+    // Disable auto-rotation
+    orbitControls.autoRotate = false;
+    
+    // Set target to player position
+    orbitControls.target.set(0, 0, 0);
+    
+    // Add event listeners for UI detection
+    setupMobileTouchEventHandling();
+    
+    console.log('OrbitControls initialized successfully for mobile');
+    
+  } catch (error) {
+    console.error('Failed to initialize OrbitControls:', error);
+    // Fallback to manual touch handling
+    setupManualTouchControls();
+  }
+}
+
+// Manual touch control fallback
+function setupManualTouchControls() {
+  console.log('Using manual touch controls as fallback');
+  
+  const canvas = renderer.domElement;
+  let isDragging = false;
+  let lastTouchX = 0;
+  let lastTouchY = 0;
+  let dragTouchId = null;
+  
+  // Function to check if touch is on UI element
+  const isTouchOnUI = (touch) => {
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (!element) return false;
+    
+    return element.closest('.joystick') || 
+           element.closest('[style*="z-index: 1000"]') ||
+           element.textContent === 'MOVE' ||
+           parseInt(window.getComputedStyle(element).zIndex || '0') >= 1000;
+  };
+  
+  // Touch Start
+  canvas.addEventListener('touchstart', (e) => {
+    for (let i = 0; i < e.touches.length; i++) {
+      const touch = e.touches[i];
+      
+      if (!isTouchOnUI(touch) && !isDragging) {
+        isDragging = true;
+        dragTouchId = touch.identifier;
+        lastTouchX = touch.clientX;
+        lastTouchY = touch.clientY;
+        e.preventDefault();
+        break;
+      }
+    }
+  }, { passive: false });
+  
+  // Touch Move
+  canvas.addEventListener('touchmove', (e) => {
+    if (!isDragging || dragTouchId === null) return;
+    
+    const touch = Array.from(e.touches).find(t => t.identifier === dragTouchId);
+    if (!touch) {
+      isDragging = false;
+      dragTouchId = null;
+      return;
+    }
+    
+    const deltaX = touch.clientX - lastTouchX;
+    const deltaY = touch.clientY - lastTouchY;
+    
+    // Apply rotation with sensitivity
+    const sensitivity = 0.005;
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y -= deltaX * sensitivity;
+    camera.rotation.x -= deltaY * sensitivity;
+    camera.rotation.x = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, camera.rotation.x));
+    
+    lastTouchX = touch.clientX;
+    lastTouchY = touch.clientY;
+    e.preventDefault();
+  }, { passive: false });
+  
+  // Touch End
+  canvas.addEventListener('touchend', (e) => {
+    const endedTouch = Array.from(e.changedTouches).find(t => t.identifier === dragTouchId);
+    if (endedTouch) {
+      isDragging = false;
+      dragTouchId = null;
+    }
+  }, { passive: false });
+}
+
+// Update camera position for mobile controls
+function updateMobileCameraPosition() {
+  if (orbitControls && physicsSystem && physicsSystem.getPlayerPosition) {
+    const playerPos = physicsSystem.getPlayerPosition();
+    
+    // Update camera position to follow player
+    camera.position.x = playerPos.x;
+    camera.position.y = playerPos.y + CAMERA_OFFSET;
+    camera.position.z = playerPos.z;
+    
+    // Update OrbitControls target
+    orbitControls.target.set(playerPos.x, playerPos.y, playerPos.z);
+  }
+}
+
+// Setup mobile touch event handling for UI detection
+function setupMobileTouchEventHandling() {
+  const canvas = renderer.domElement;
+  
+  // Function to check if touch is on UI element
+  const isTouchOnUI = (touch) => {
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (!element) return false;
+    
+    return element.closest('.joystick') || 
+           element.closest('[style*="z-index: 1000"]') ||
+           element.textContent === 'MOVE' ||
+           parseInt(window.getComputedStyle(element).zIndex || '0') >= 1000;
+  };
+  
+  // Override OrbitControls touch handling to respect UI elements
+  const originalOnTouchStart = orbitControls.onTouchStart;
+  orbitControls.onTouchStart = function(event) {
+    // Check if any touch is on UI
+    const hasUITouch = Array.from(event.touches).some(touch => isTouchOnUI(touch));
+    
+    if (hasUITouch) {
+      // Disable OrbitControls for this touch
+      this.enabled = false;
+      return;
+    }
+    
+    // Enable OrbitControls and call original handler
+    this.enabled = true;
+    if (originalOnTouchStart) {
+      originalOnTouchStart.call(this, event);
+    }
+  };
+  
+  // Handle touch end to re-enable controls
+  const originalOnTouchEnd = orbitControls.onTouchEnd;
+  orbitControls.onTouchEnd = function(event) {
+    if (originalOnTouchEnd) {
+      originalOnTouchEnd.call(this, event);
+    }
+    // Re-enable controls after touch ends
+    this.enabled = true;
+  };
+}
+
 // Start game function with better error handling
 async function startGame(loadingScreen) {
   try {
@@ -1132,8 +1467,17 @@ async function startGame(loadingScreen) {
 
 
 
-// Make startGame available globally
+// Function to toggle between desktop and mobile controls
+function toggleMobileControls() {
+  if (orbitControls) {
+    orbitControls.enabled = !orbitControls.enabled;
+    console.log('Mobile controls:', orbitControls.enabled ? 'enabled' : 'disabled');
+  }
+}
+
+// Make functions available globally
 window.startGame = startGame;
+window.toggleMobileControls = toggleMobileControls;
 
 const landingPage = new LandingPage();
 
