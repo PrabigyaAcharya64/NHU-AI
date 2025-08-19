@@ -15,7 +15,7 @@ class PhysicsSystem {
     
     // Physics constants
     this.gravity = -9.81;
-    this.groundLevel = -0.5;
+    this.groundLevel = -1.35;
     this.friction = 0.8;
     this.airResistance = 0.98;
     

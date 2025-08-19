@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import { SplatMesh } from "@sparkjsdev/spark";
-// OrbitControls removed - mobile controls handled by MobileControls class
 import LandingPage from './landingPage.js';
 import LoadingScreen from './loadingScreen.js';
 import { MobileControls } from './mobileControls.js';
@@ -26,7 +25,7 @@ const sceneConfig = {
   sceneSettings: {
     initialPosition: [3.3, -0.1, 0.5],
     gravity: [0, -9.81, 0],
-    groundLevel: -0.5,
+    groundLevel: -1.35,
     playerHeight: 1.7,
     crouchHeight: 1.0,
     playerRadius: 0.3,
@@ -55,7 +54,7 @@ const sceneConfig = {
     scale: [20, 10, 20], // Large cube to encompass the playable area
                   color: 0x0066ff, // Blue color for boundary cube
               opacity: 0.3,
-              visible: false, // Hide the blue boundary cube
+              visible: true,
               physicsRadius: 0.5,
               pushStrength: 8.0,
               escapeDistance: 2.0,
@@ -152,7 +151,6 @@ let isGrounded = false, isCrouching = false;
 
 let crosshair, infoPopup;
 let topUIIcons;
-// Mobile controls are now handled by MobileControls class
 
 
 
@@ -178,91 +176,6 @@ let gameState = {
   totalTreasures: 3    // Total number of treasures in the game
 };
 
-// Popup Management System
-class PopupManager {
-  constructor() {
-    this.activePopups = new Set();
-    this.originalCursorStyle = null;
-  }
-
-  showPopup(popupElement, id = null) {
-    // Store original cursor style if this is the first popup
-    if (this.activePopups.size === 0) {
-      this.originalCursorStyle = document.body.style.cursor;
-    }
-
-    // Add popup to tracking
-    if (id) {
-      popupElement.dataset.popupId = id;
-    }
-    this.activePopups.add(popupElement);
-
-    // Exit pointer lock if active (to show cursor)
-    if (document.pointerLockElement === document.body) {
-      document.exitPointerLock();
-    }
-
-    // Show cursor
-    document.body.style.cursor = 'default';
-
-    // Add to document
-    document.body.appendChild(popupElement);
-
-    // Auto-close functionality for close buttons
-    const closeButtons = popupElement.querySelectorAll('button[id*="close"], button[onclick*="remove"]');
-    closeButtons.forEach(button => {
-      button.addEventListener('click', () => {
-        this.closePopup(popupElement);
-      });
-    });
-
-    // Auto-close after 8 seconds if no close button found
-    if (closeButtons.length === 0) {
-      setTimeout(() => {
-        this.closePopup(popupElement);
-      }, 8000);
-    }
-
-    return popupElement;
-  }
-
-  closePopup(popupElement) {
-    // Remove from tracking
-    this.activePopups.delete(popupElement);
-
-    // Remove from DOM
-    if (popupElement.parentNode) {
-      popupElement.remove();
-    }
-
-    // Hide cursor if no more popups
-    if (this.activePopups.size === 0) {
-      this.hideCursor();
-    }
-  }
-
-  closeAllPopups() {
-    const popups = Array.from(this.activePopups);
-    popups.forEach(popup => this.closePopup(popup));
-  }
-
-  hideCursor() {
-    // Restore original cursor style or hide cursor if in game mode
-    if (document.pointerLockElement === document.body) {
-      document.body.style.cursor = 'none';
-    } else if (this.originalCursorStyle) {
-      document.body.style.cursor = this.originalCursorStyle;
-    }
-  }
-
-  getActivePopupCount() {
-    return this.activePopups.size;
-  }
-}
-
-// Global popup manager instance
-const popupManager = new PopupManager();
-
 // Define the progression order
 const cubeProgression = [
   'helloCube',
@@ -273,15 +186,15 @@ const cubeProgression = [
 // Define hints for each cube
 const cubeHints = {
   'helloCube': {
-    title: "Clue",
+    title: "Level 1 - Clue 1",
     hint: "Look for a green cube near the starting area. It's your first step in this treasure hunt adventure!"
   },
   'newCube': {
-    title: "Clue", 
+    title: "Level 2 - Clue 2", 
     hint: "Find the yellow cube. It's positioned in a different area of the map. Keep exploring!"
   },
   'anotherCube2': {
-    title: "Final Clue",
+    title: "Level 3 - Final Clue",
     hint: "The purple cube holds the final secret. You're almost at the end of your journey!"
   }
 };
@@ -310,22 +223,6 @@ async function init(loadingScreen = null) {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    
-    // Device-specific optimizations for mobile
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    const isLowEnd = navigator.hardwareConcurrency <= 4;
-    
-    if (isMobile || isLowEnd) {
-      // Mobile/low-end device detected, applying performance optimizations
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.shadowMap.enabled = false;
-      renderer.antialias = false;
-    } else {
-      renderer.setPixelRatio(window.devicePixelRatio);
-      renderer.shadowMap.enabled = true;
-      renderer.antialias = true;
-    }
-    
     document.body.appendChild(renderer.domElement);
 
     // Add lighting
@@ -627,9 +524,6 @@ function createGameObjects() {
     color: 0xff0000
   };
   
-  // Make red cube invisible
-  redCube.visible = false;
-  
   scene.add(redCube);
   window.redCube = redCube;
   window.linkCubes = linkCubes;
@@ -731,7 +625,7 @@ async function initializeSystems() {
     window.GROUND_LEVEL = GROUND_LEVEL;
 
     // Initialize mobile controls
-    // Initializing mobile controls...
+    console.log('Initializing mobile controls...');
     mobileControls = new MobileControls(renderer, camera, scene, sceneConfig);
     window.mobileControls = mobileControls;
 
@@ -761,7 +655,6 @@ async function initializeSystems() {
     window.showHint = showHint;
     window.cubeHints = cubeHints;
     window.gameState = gameState;
-    window.popupManager = popupManager; // Make popup manager globally available
     window.updateProgressBar = () => {
       if (hudManager && hudManager.updateProgressBar) {
         hudManager.updateProgressBar();
@@ -782,9 +675,6 @@ async function initializeSystems() {
     console.log('Initializing top UI icons...');
     topUIIcons = new TopUIIcons();
     window.topUIIcons = topUIIcons;
-    
-    // Initialize mobile camera controls
-    initializeMobileCameraControls();
     
     console.log('All systems initialized successfully');
     
@@ -807,14 +697,8 @@ function setupEventListeners() {
     }
     
     if (e.code === 'Escape') {
-      // Close all popups first
-      if (popupManager && popupManager.getActivePopupCount() > 0) {
-        popupManager.closeAllPopups();
-      } else {
-        // If no popups, exit pointer lock
-        document.exitPointerLock();
-        document.body.style.cursor = 'default';
-      }
+      document.exitPointerLock();
+      document.body.style.cursor = 'default';
     }
 
     // UI shortcuts
@@ -851,7 +735,7 @@ function setupEventListeners() {
     keys[e.code] = false;
   });
 
-  // Mouse events - only handle if OrbitControls is not active
+  // Mouse events
   document.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement === document.body) {
       yaw -= e.movementX * sceneConfig.sceneSettings.mouseSensitivity;
@@ -863,22 +747,6 @@ function setupEventListeners() {
   });
 
   document.addEventListener('click', (e) => {
-    // Check if there are active popups
-    if (popupManager && popupManager.getActivePopupCount() > 0) {
-      // Check if click is outside any popup
-      const clickedElement = e.target;
-      const isClickInsidePopup = clickedElement.closest('[data-popup-id]') || 
-                                 clickedElement.closest('#info-popup') || 
-                                 clickedElement.closest('#hint-popup');
-      
-      if (!isClickInsidePopup) {
-        // Click outside popup - close all popups
-        popupManager.closeAllPopups();
-        return;
-      }
-    }
-    
-    // Normal game click handling
     if (document.pointerLockElement !== document.body) {
       document.body.requestPointerLock();
       document.body.style.cursor = 'none';
@@ -893,7 +761,31 @@ function setupEventListeners() {
     }
   });
 
-  // Mobile touch interaction is now handled by MobileControls class
+  // Mobile touch interaction (improved version)
+  document.addEventListener('touchstart', (e) => {
+    // Only handle touch if it's a mobile device and not touching joysticks
+    if (mobileControls && mobileControls.isMobile && mobileControls.isLandscape) {
+      // Check if touch is on a joystick or UI element
+      const touch = e.touches[0];
+      const target = document.elementFromPoint(touch.clientX, touch.clientY);
+      
+      // Skip if touching joysticks, UI elements, or labels
+      if (target && (
+        target.closest('.joystick') || 
+        target.closest('#crosshair') ||
+        target.textContent === 'MOVE' ||
+        target.textContent === 'CAMERA' ||
+        target.style.position === 'absolute' ||
+        target.style.zIndex ||
+        target.tagName === 'BUTTON'
+      )) {
+        return; // Let the joystick/UI handle this touch
+      }
+      
+      // If touching the canvas area, let the setupTouchCamera handle it
+      // Don't prevent default here to avoid conflicts
+    }
+  }, { passive: true }); // Changed to passive: true
 
 
 
@@ -969,15 +861,8 @@ function animate() {
           renderer.domElement.style.visibility = 'visible';
         }
       } catch (mobileError) {
-        // Silent error handling for professional behavior
+        console.warn('Mobile controls error:', mobileError);
       }
-    }
-    
-    // Update mobile camera position
-    try {
-      updateMobileCameraPosition();
-    } catch (mobileError) {
-      // Silent error handling for professional behavior
     }
     
     // Render the scene
@@ -1012,7 +897,7 @@ function getMoveInput() {
         
         // Camera input is now handled by touch drag, no need to store it
       } catch (mobileInputError) {
-        // Silent error handling for professional behavior
+        console.warn('Mobile input error:', mobileInputError);
       }
     }
   } catch (error) {
@@ -1083,9 +968,8 @@ function showInfoPopup(title, url) {
     `;
     
     infoPopup.innerHTML = `<div style="font-weight:bold;font-size:22px;margin-bottom:10px;">${title}</div><div>${url}</div><br><button id="close-popup-btn" style="margin-top:10px;padding:6px 18px;background:${color};color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;">Close</button>`;
-    
-    // Use popup manager to show popup with automatic cursor management
-    popupManager.showPopup(infoPopup, 'info-popup');
+    document.body.appendChild(infoPopup);
+    document.getElementById('close-popup-btn').onclick = () => infoPopup.remove();
   } catch (error) {
     console.error('Show info popup error:', error);
   }
@@ -1212,24 +1096,6 @@ function forcePlayerOutOfRedCube(playerPos) {
   }
 }
 
-// Mobile Camera Control System - Simplified
-function initializeMobileCameraControls() {
-  // Mobile controls are now handled entirely by the MobileControls class
-  // This function is kept for compatibility but simplified
-}
-
-// Update camera position for mobile controls
-function updateMobileCameraPosition() {
-  if (physicsSystem && physicsSystem.getPlayerPosition) {
-    const playerPos = physicsSystem.getPlayerPosition();
-    
-    // Update camera position to follow player
-    camera.position.x = playerPos.x;
-    camera.position.y = playerPos.y + CAMERA_OFFSET;
-    camera.position.z = playerPos.z;
-  }
-}
-
 // Start game function with better error handling
 async function startGame(loadingScreen) {
   try {
@@ -1266,15 +1132,8 @@ async function startGame(loadingScreen) {
 
 
 
-// Function to toggle between desktop and mobile controls
-function toggleMobileControls() {
-  // Mobile controls are now handled by MobileControls class
-  // This function is kept for compatibility
-}
-
-// Make functions available globally
+// Make startGame available globally
 window.startGame = startGame;
-window.toggleMobileControls = toggleMobileControls;
 
 const landingPage = new LandingPage();
 
