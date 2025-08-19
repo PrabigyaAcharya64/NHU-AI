@@ -26,7 +26,7 @@ class TopUIIcons {
             transition: opacity 0.3s ease-out, transform 0.3s ease-out;
         `;
 
-        // --- Logo (using GAMELOGO.png) - No background container ---
+        // --- Logo (using GAMELOGO.png) - Just a logo, not a button ---
         const logoContainer = document.createElement('div');
         logoContainer.className = 'ui-logo';
         logoContainer.style.cssText = `
@@ -35,8 +35,6 @@ class TopUIIcons {
             display: flex;
             align-items: center;
             justify-content: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
         `;
 
         // Try to load the game logo image
@@ -54,21 +52,6 @@ class TopUIIcons {
             logoContainer.innerHTML = this.getGameLogoSVG();
         };
         logoContainer.appendChild(logoImg);
-        
-        // Add hover effects for logo
-        logoContainer.addEventListener('mouseenter', () => {
-            logoContainer.style.transform = 'scale(1.1)';
-        });
-        logoContainer.addEventListener('mouseleave', () => {
-            logoContainer.style.transform = 'scale(1)';
-        });
-        logoContainer.addEventListener('mousedown', () => {
-            logoContainer.style.transform = 'scale(0.95)';
-        });
-        logoContainer.addEventListener('mouseup', () => {
-            logoContainer.style.transform = 'scale(1.1)';
-        });
-        logoContainer.addEventListener('click', () => this.handleLogoClick());
 
         // --- Game/Joystick Icon ---
         const gameIcon = this.createGameIcon();
@@ -173,7 +156,7 @@ class TopUIIcons {
     // --- SVG ICONS ---
 
     getGameLogoSVG() {
-        // Fallback logo if GAMELOGO.png doesn't load - transparent background
+        // Fallback logo if GAMELOGO.png doesn't load - just a display logo
         return `
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:32px; height:32px;">
                 <path fill="#429fb8" d="M12 2L4 6v2.5c0 6.13 3.33 11.63 8 13.5c4.67-1.87 8-7.37 8-13.5V6L12 2zm0 16.5c-2.9-1.3-5-5.55-5-10V7.2l5-2.2l5 2.2v4.8c0 4.45-2.1 8.7-5 10z"/>
@@ -238,11 +221,6 @@ class TopUIIcons {
 
 
     // --- Event Handlers ---
-
-    handleLogoClick() {
-        console.log('Logo clicked - Game menu');
-        this.showNotification('Game Menu', 'Main menu opened');
-    }
 
     handleGameClick() {
         console.log('Game icon clicked - Starting treasure hunt');

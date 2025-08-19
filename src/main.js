@@ -186,15 +186,15 @@ const cubeProgression = [
 // Define hints for each cube
 const cubeHints = {
   'helloCube': {
-    title: "Level 1 - Clue 1",
+    title: "Clue",
     hint: "Look for a green cube near the starting area. It's your first step in this treasure hunt adventure!"
   },
   'newCube': {
-    title: "Level 2 - Clue 2", 
+    title: "Clue", 
     hint: "Find the yellow cube. It's positioned in a different area of the map. Keep exploring!"
   },
   'anotherCube2': {
-    title: "Level 3 - Final Clue",
+    title: "Final Clue",
     hint: "The purple cube holds the final secret. You're almost at the end of your journey!"
   }
 };

@@ -266,7 +266,12 @@ class MobileJoystick {
     
     this.positionJoysticks();
     this.createFullscreenButton();
+    
+    // Setup simplified touch camera controls
     this.setupTouchCamera();
+    
+    // Alternative: If the above doesn't work, uncomment this line:
+    // this.setupSimpleTouchCamera();
   }
   
   positionJoysticks() {
@@ -346,244 +351,231 @@ class MobileJoystick {
     }
   }
 
-     setupTouchCamera() {
-     // Add touch camera controls to the canvas
+  setupTouchCamera() {
+    const canvas = this.renderer.domElement;
+    
+    // Simplified touch state tracking
+    let isDragging = false;
+    let lastTouchX = 0;
+    let lastTouchY = 0;
+    let dragTouchId = null;
+    
+    // Camera rotation limits
+    const maxPolarAngle = Math.PI; // 180 degrees
+    const minPolarAngle = 0; // 0 degrees
+    
+    // Current camera angles (initialize from camera if available)
+    let cameraYaw = this.camera ? this.camera.rotation.y : 0;
+    let cameraPitch = this.camera ? this.camera.rotation.x : 0;
+    
+    const resetTouchState = () => {
+      isDragging = false;
+      dragTouchId = null;
+    };
+    
+    // Function to check if touch is on UI element
+    const isTouchOnUI = (touch) => {
+      const element = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (!element) return false;
+      
+      return element.closest('.joystick') || 
+             element.closest('[style*="z-index: 1000"]') ||
+             element.textContent === 'MOVE' ||
+             parseInt(window.getComputedStyle(element).zIndex || '0') >= 1000;
+    };
+    
+    // Touch Start
+    canvas.addEventListener('touchstart', (e) => {
+      // Find a touch that's not on UI
+      for (let i = 0; i < e.touches.length; i++) {
+        const touch = e.touches[i];
+        
+        if (!isTouchOnUI(touch) && !isDragging) {
+          isDragging = true;
+          dragTouchId = touch.identifier;
+          lastTouchX = touch.clientX;
+          lastTouchY = touch.clientY;
+          
+          // Prevent scrolling/zooming only for camera touches
+          e.preventDefault();
+          break;
+        }
+      }
+    }, { passive: false });
+    
+    // Touch Move - Camera Rotation
+    canvas.addEventListener('touchmove', (e) => {
+      if (!isDragging || dragTouchId === null) return;
+      
+      // Find our specific touch
+      const touch = Array.from(e.touches).find(t => t.identifier === dragTouchId);
+      if (!touch) {
+        resetTouchState();
+        return;
+      }
+      
+      // Calculate movement delta
+      const deltaX = touch.clientX - lastTouchX;
+      const deltaY = touch.clientY - lastTouchY;
+      
+      // Apply rotation with appropriate sensitivity
+      const sensitivity = (this.sceneConfig?.sceneSettings?.mouseSensitivity || 0.002) * 2;
+      
+      // Update camera angles
+      cameraYaw -= deltaX * sensitivity;
+      cameraPitch -= deltaY * sensitivity;
+      
+      // Clamp pitch to prevent camera flipping
+      cameraPitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, cameraPitch));
+      
+      // Apply rotation to camera
+      if (this.camera) {
+        this.camera.rotation.order = 'YXZ'; // Important: set rotation order
+        this.camera.rotation.y = cameraYaw;
+        this.camera.rotation.x = cameraPitch;
+        this.camera.rotation.z = 0; // Prevent roll
+      }
+      
+      // Try alternative methods if direct rotation doesn't work
+      if (typeof window.updateCameraRotation === 'function') {
+        window.updateCameraRotation(-deltaX * sensitivity, -deltaY * sensitivity);
+      }
+      
+      // Update last position
+      lastTouchX = touch.clientX;
+      lastTouchY = touch.clientY;
+      
+      // Prevent default to avoid scrolling
+      e.preventDefault();
+      
+    }, { passive: false });
+    
+    // Touch End - Handle clicks and cleanup
+    canvas.addEventListener('touchend', (e) => {
+      if (!isDragging || dragTouchId === null) return;
+      
+      // Check if our touch ended
+      const endedTouch = Array.from(e.changedTouches).find(t => t.identifier === dragTouchId);
+      if (!endedTouch) return;
+      
+      // Calculate if this was a tap vs drag
+      const totalMovement = Math.sqrt(
+        Math.pow(endedTouch.clientX - lastTouchX, 2) + 
+        Math.pow(endedTouch.clientY - lastTouchY, 2)
+      );
+      
+      // If minimal movement, treat as click/tap
+      if (totalMovement < 15) {
+        this.handleTouchClick(endedTouch);
+      }
+      
+      resetTouchState();
+      e.preventDefault();
+      
+    }, { passive: false });
+    
+    // Touch Cancel - Cleanup
+    canvas.addEventListener('touchcancel', (e) => {
+      const cancelledTouch = Array.from(e.changedTouches).find(t => t.identifier === dragTouchId);
+      if (cancelledTouch) {
+        resetTouchState();
+      }
+    }, { passive: false });
+    
+    // Global cleanup on visibility change
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        resetTouchState();
+      }
+    });
+  }
+
+     // Separate method for handling touch clicks/taps
+   handleTouchClick(touch) {
+     try {
+       const canvas = this.renderer.domElement;
+       const rect = canvas.getBoundingClientRect();
+       
+       // Convert touch coordinates to normalized device coordinates
+       const mouseX = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+       const mouseY = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+       
+       console.log('Touch click at:', { mouseX, mouseY });
+       
+       // Update raycast manager if available
+       if (this.raycastManager && this.raycastManager.mouse) {
+         this.raycastManager.mouse.set(mouseX, mouseY);
+         
+         // Perform raycast and interaction
+         const hitInfo = this.raycastManager.update();
+         console.log('Touch hit info:', hitInfo);
+         
+         if (this.interactionManager && hitInfo) {
+           const playerPos = this.physicsSystem ? 
+             this.physicsSystem.getPlayerPosition() : 
+             { x: 0, y: 0, z: 0 };
+           
+           this.interactionManager.handleClick(hitInfo, playerPos);
+         }
+       }
+       
+       // Alternative: Try global interaction functions
+       if (typeof window.handleCanvasClick === 'function') {
+         const event = { clientX: touch.clientX, clientY: touch.clientY };
+         window.handleCanvasClick(event);
+       }
+       
+     } catch (error) {
+       console.warn('Touch click handling error:', error);
+     }
+   }
+
+   // Alternative: Even simpler approach if the above still doesn't work
+   setupSimpleTouchCamera() {
      const canvas = this.renderer.domElement;
      
-     // Variables to track touch state
-     let isTouchingForCamera = false;
-     let touchStartX = 0;
-     let touchStartY = 0;
-     let lastTouchTime = 0;
-     let touchId = null; // Track specific touch ID for multi-touch support
+     let isPointerDown = false;
+     let pointerX = 0;
+     let pointerY = 0;
      
-     // Function to reset camera touch state
-     const resetCameraTouch = () => {
-       isTouchingForCamera = false;
-       touchId = null;
-       console.log('Camera touch state reset');
-     };
+     // Use pointer events (works for both mouse and touch)
+     canvas.addEventListener('pointerdown', (e) => {
+       // Skip if touching UI
+       if (e.target.closest('.joystick')) return;
+       
+       isPointerDown = true;
+       pointerX = e.clientX;
+       pointerY = e.clientY;
+       canvas.setPointerCapture(e.pointerId);
+       e.preventDefault();
+     });
      
-     // Safety timeout to reset stuck camera state
-     let cameraResetTimeout = null;
-     const startCameraResetTimer = () => {
-       if (cameraResetTimeout) clearTimeout(cameraResetTimeout);
-       cameraResetTimeout = setTimeout(() => {
-         if (isTouchingForCamera) {
-           console.warn('Camera touch state stuck, forcing reset');
-           resetCameraTouch();
-         }
-       }, 5000); // Reset after 5 seconds if stuck
-     };
+     canvas.addEventListener('pointermove', (e) => {
+       if (!isPointerDown) return;
+       
+       const deltaX = e.clientX - pointerX;
+       const deltaY = e.clientY - pointerY;
+       
+       // Apply rotation
+       const sensitivity = 0.005;
+       if (this.camera) {
+         this.camera.rotation.order = 'YXZ';
+         this.camera.rotation.y -= deltaX * sensitivity;
+         this.camera.rotation.x -= deltaY * sensitivity;
+         this.camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.camera.rotation.x));
+       }
+       
+       pointerX = e.clientX;
+       pointerY = e.clientY;
+       e.preventDefault();
+     });
      
-     const clearCameraResetTimer = () => {
-       if (cameraResetTimeout) {
-         clearTimeout(cameraResetTimeout);
-         cameraResetTimeout = null;
+     canvas.addEventListener('pointerup', (e) => {
+       if (isPointerDown) {
+         isPointerDown = false;
+         canvas.releasePointerCapture(e.pointerId);
        }
-     };
-     
-     canvas.addEventListener('touchstart', (e) => {
-       // Handle multiple touches - allow joystick and camera to work simultaneously
-       for (let i = 0; i < e.touches.length; i++) {
-         const touch = e.touches[i];
-         const currentTime = Date.now();
-         
-         // Check if touching a UI element or joystick
-         const target = document.elementFromPoint(touch.clientX, touch.clientY);
-         if (target && (
-           target.closest('.joystick') || 
-           target.closest('#crosshair') ||
-           target.textContent === 'MOVE' ||
-           target.style.zIndex > 1000
-         )) {
-           continue; // Skip this touch if it's on UI, but don't prevent other touches
-         }
-         
-         // If this touch is on the canvas area and not already tracking a camera touch
-         if (!isTouchingForCamera) {
-           // Start camera touch tracking
-           isTouchingForCamera = true;
-           touchId = touch.identifier;
-           touchStartX = touch.clientX;
-           touchStartY = touch.clientY;
-           this.lastTouchX = touch.clientX;
-           this.lastTouchY = touch.clientY;
-           lastTouchTime = currentTime;
-           
-           // Start safety timer
-           startCameraResetTimer();
-           console.log('Camera touch started, ID:', touchId);
-         }
-       }
-       
-       // Only prevent default if we're handling camera touch and there are no UI touches
-       const hasUITouch = Array.from(e.touches).some(touch => {
-         const target = document.elementFromPoint(touch.clientX, touch.clientY);
-         return target && (
-           target.closest('.joystick') || 
-           target.closest('#crosshair') ||
-           target.textContent === 'MOVE' ||
-           target.style.zIndex > 1000
-         );
-       });
-       
-       if (isTouchingForCamera && !hasUITouch) {
-         e.preventDefault();
-       }
-     }, { passive: false });
-    
-         canvas.addEventListener('touchmove', (e) => {
-       // Find the camera touch by ID
-       const cameraTouch = Array.from(e.touches).find(touch => touch.identifier === touchId);
-       
-       if (isTouchingForCamera && cameraTouch) {
-         // Reset safety timer on each move
-         startCameraResetTimer();
-         // Check if any other touches are on UI elements
-         const hasUITouch = Array.from(e.touches).some(touch => {
-           if (touch.identifier === touchId) return false; // Skip the camera touch
-           const target = document.elementFromPoint(touch.clientX, touch.clientY);
-           return target && (
-             target.closest('.joystick') || 
-             target.closest('#crosshair') ||
-             target.textContent === 'MOVE' ||
-             target.style.zIndex > 1000
-           );
-         });
-         
-         // Only prevent default if no UI touches are active
-         if (!hasUITouch) {
-           e.preventDefault();
-         }
-         
-         const deltaX = cameraTouch.clientX - this.lastTouchX;
-         const deltaY = cameraTouch.clientY - this.lastTouchY;
-         
-         // Adjust sensitivity for mobile (higher sensitivity)
-         const sensitivity = this.sceneConfig.sceneSettings.mouseSensitivity * 3; // Increased sensitivity
-         
-                   // Update camera rotation - try multiple approaches
-          if (typeof window.updateCameraRotation === 'function') {
-            window.updateCameraRotation(-deltaX * sensitivity, -deltaY * sensitivity);
-          } else if (this.camera) {
-            // Direct camera rotation
-            this.camera.rotation.y -= deltaX * sensitivity;
-            this.camera.rotation.x -= deltaY * sensitivity;
-            this.camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.camera.rotation.x));
-          }
-         
-         // Update last touch position
-         this.lastTouchX = cameraTouch.clientX;
-         this.lastTouchY = cameraTouch.clientY;
-       }
-     }, { passive: false });
-    
-         canvas.addEventListener('touchend', (e) => {
-       // Check if the camera touch ended
-       const cameraTouchEnded = Array.from(e.changedTouches).some(touch => touch.identifier === touchId);
-       
-       if (isTouchingForCamera && cameraTouchEnded) {
-         const currentTime = Date.now();
-         const touchDuration = currentTime - lastTouchTime;
-         const touch = Array.from(e.changedTouches).find(t => t.identifier === touchId);
-         
-         if (touch) {
-           const totalDeltaX = Math.abs(touch.clientX - touchStartX);
-           const totalDeltaY = Math.abs(touch.clientY - touchStartY);
-           
-           // If it was a short tap with minimal movement, treat as click
-           if (touchDuration < 200 && totalDeltaX < 20 && totalDeltaY < 20) {
-             console.log('Mobile touch click detected:', { touchDuration, totalDeltaX, totalDeltaY });
-             try {
-               // Perform click interaction
-               const rect = canvas.getBoundingClientRect();
-               const mouseX = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
-               const mouseY = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
-               
-               // Update raycast manager mouse position
-               const currentRaycastManager = this.raycastManager || (typeof raycastManager !== 'undefined' ? raycastManager : null);
-               const currentPhysicsSystem = this.physicsSystem || (typeof physicsSystem !== 'undefined' ? physicsSystem : null);
-               const currentInteractionManager = this.interactionManager || (typeof interactionManager !== 'undefined' ? interactionManager : null);
-               
-               console.log('Mobile touch managers:', {
-                 raycastManager: !!currentRaycastManager,
-                 physicsSystem: !!currentPhysicsSystem,
-                 interactionManager: !!currentInteractionManager
-               });
-               
-               if (currentRaycastManager && currentRaycastManager.mouse) {
-                 currentRaycastManager.mouse.set(mouseX, mouseY);
-               }
-               
-               // Perform interaction
-               if (currentRaycastManager && currentInteractionManager) {
-                 const hitInfo = currentRaycastManager.update();
-                 console.log('Mobile touch hitInfo:', hitInfo);
-                 const playerPos = currentPhysicsSystem ? 
-                   currentPhysicsSystem.getPlayerPosition() : 
-                   { x: 0, y: 0, z: 0 };
-                 currentInteractionManager.handleClick(hitInfo, playerPos);
-               } else {
-                 console.warn('Mobile touch: Missing managers for interaction');
-               }
-             } catch (error) {
-               console.warn('Touch click interaction error:', error);
-             }
-           }
-         }
-         
-                   // Reset camera touch state
-          resetCameraTouch();
-          clearCameraResetTimer();
-         
-         // Only prevent default if no other touches are active
-         const hasRemainingUITouches = Array.from(e.touches).some(touch => {
-           const target = document.elementFromPoint(touch.clientX, touch.clientY);
-           return target && (
-             target.closest('.joystick') || 
-             target.closest('#crosshair') ||
-             target.textContent === 'MOVE' ||
-             target.style.zIndex > 1000
-           );
-         });
-         
-         if (!hasRemainingUITouches) {
-           e.preventDefault();
-         }
-       }
-     }, { passive: false });
-    
-         // Handle touch cancel events
-     canvas.addEventListener('touchcancel', (e) => {
-       // Check if the camera touch was cancelled
-       const cameraTouchCancelled = Array.from(e.changedTouches).some(touch => touch.identifier === touchId);
-       
-       if (cameraTouchCancelled) {
-         resetCameraTouch();
-         clearCameraResetTimer();
-         console.log('Camera touch cancelled');
-                }
-       }, { passive: false });
-       
-       // Global touch end listener to catch any missed touch events
-       document.addEventListener('touchend', (e) => {
-         // If we have an active camera touch but no touches remain, reset
-         if (isTouchingForCamera && e.touches.length === 0) {
-           console.log('No touches remaining, resetting camera state');
-           resetCameraTouch();
-           clearCameraResetTimer();
-         }
-       }, { passive: true });
-       
-       // Handle visibility change to reset camera state when app goes to background
-       document.addEventListener('visibilitychange', () => {
-         if (document.hidden && isTouchingForCamera) {
-           console.log('App hidden, resetting camera state');
-           resetCameraTouch();
-           clearCameraResetTimer();
-         }
-       });
+     });
    }
   
   isInteractiveObject(object) {
@@ -648,20 +640,10 @@ class MobileJoystick {
      }, 1000); // Check every 1 second for more responsiveness
    }
    
-   // Periodic camera state check to prevent stuck states
+   // Simplified camera state management - no longer needed with new approach
    startCameraStateCheck() {
-     setInterval(() => {
-       if (this.isMobile && this.isLandscape) {
-         // Check if there are any active touches on the document
-         const hasActiveTouches = document.querySelectorAll('*:active').length > 0;
-         
-         // If no touches are active but camera state is stuck, reset it
-         if (!hasActiveTouches && this.cameraTouchActive) {
-           console.log('Periodic check: No active touches found, resetting camera state');
-           this.resetCameraTouchState();
-         }
-       }
-     }, 2000); // Check every 2 seconds
+     // This method is kept for compatibility but simplified
+     // The new touch camera system handles state management internally
    }
   
   showJoysticks() {
@@ -703,10 +685,9 @@ class MobileJoystick {
    
    // Method to manually reset camera touch state (can be called from outside)
    resetCameraTouchState() {
-     if (this.cameraTouchActive) {
-       this.cameraTouchActive = false;
-       console.log('Camera touch state manually reset');
-     }
+     // This method is kept for compatibility but simplified
+     // The new touch camera system handles state management internally
+     console.log('Camera touch state reset requested (simplified system)');
    }
    
    destroy() {
