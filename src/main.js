@@ -26,7 +26,7 @@ const sceneConfig = {
   sceneSettings: {
     initialPosition: [3.3, -0.1, 0.5],
     gravity: [0, -9.81, 0],
-    groundLevel: -1.35,
+    groundLevel: -0.5,
     playerHeight: 1.7,
     crouchHeight: 1.0,
     playerRadius: 0.3,
