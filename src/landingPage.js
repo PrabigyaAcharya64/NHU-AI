@@ -290,6 +290,19 @@ class LandingPage {
       -webkit-overflow-scrolling: touch;
     `;
 
+    // Add fallback gradient background immediately (lower z-index)
+    const fallbackBackground = document.createElement('div');
+    fallbackBackground.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 25%, #16213e 50%, #0f3460 75%, #0a0a0a 100%);
+      z-index: 0;
+      pointer-events: none;
+    `;
+    
     // Background Video with fallback to gradient
     const backgroundVideo = document.createElement('video');
     backgroundVideo.style.cssText = `
@@ -299,7 +312,7 @@ class LandingPage {
       width: 100%;
       height: 100%;
       object-fit: cover;
-      opacity: 0;
+      opacity: 0.95;
       z-index: 1;
       pointer-events: none;
       /* Mobile optimizations */
@@ -307,19 +320,6 @@ class LandingPage {
       transform: translateZ(0);
       -webkit-backface-visibility: hidden;
       backface-visibility: hidden;
-    `;
-
-    // Add fallback gradient background immediately
-    const fallbackBackground = document.createElement('div');
-    fallbackBackground.style.cssText = `
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 25%, #16213e 50%, #0f3460 75%, #0a0a0a 100%);
-      z-index: 1;
-      pointer-events: none;
     `;
     
     // Set video attributes for optimal performance
@@ -655,23 +655,23 @@ class LandingPage {
     const contentSections = [
       {
         title: 'Historical Background',
-        content: 'The site originally housed Chaukot Durbar, a four-cornered fortress from the Malla period. Before that, it was home to Ratnakar Gumba, a Buddhist monastery. In the 17th century, King Siddhinar Singh Malla handed the monastery over to Hakka Bahal and later installed a statue of Keshav Narayan—an incarnation of Lord Vishnu—at the center of the courtyard, giving the space its current name. By 1734, the area had evolved into a ceremonial palace complex used by the Malla kings, representing the pinnacle of court life in Patan.'
+        content: 'The site originally housed Chaukot Durbar, a four-cornered fortress from the Malla period. Before that, it was home to Ratnakar Gumba, a Buddhist monastery. In the 17th century, King[...]
       },
       {
         title: 'Architectural Features',
-        content: 'Designed in the traditional Nepali chowk style, the courtyard is enclosed by four wings and features ornately carved timber columns and arcades, traditional brickwork and gilded religious motifs, a central shrine dedicated to Keshav Narayan, and a golden window and several decorative elements reflecting Malla craftsmanship. Modern restoration efforts have incorporated structural reinforcements for earthquake resilience while preserving the historical aesthetic.'
+        content: 'Designed in the traditional Nepali chowk style, the courtyard is enclosed by four wings and features ornately carved timber columns and arcades, traditional brickwork and gilded reli[...]
       },
       {
         title: 'The Patan Museum',
-        content: 'Following damage from the 1934 earthquake and subsequent neglect, Keshav Narayan Chowk underwent major restoration beginning in 1982. This joint initiative by the Nepalese and Austrian governments resulted in the establishment of the Patan Museum—Nepal\'s first autonomous public museum and one of the most respected in South Asia. Today, the museum houses bronze sculptures and sacred artifacts, exhibitions on Newar art and culture, and rotating displays and educational programming.'
+        content: 'Following damage from the 1934 earthquake and subsequent neglect, Keshav Narayan Chowk underwent major restoration beginning in 1982. This joint initiative by the Nepalese and Austri[...]
       },
       {
         title: 'Cultural and Civic Role',
-        content: 'The courtyard remains a functional cultural space that continues to host religious rituals and seasonal festivals, public gatherings and performances, and workshops and educational events. It serves both as a site of devotion and as a cultural learning center, connecting visitors to the rich heritage of Patan.'
+        content: 'The courtyard remains a functional cultural space that continues to host religious rituals and seasonal festivals, public gatherings and performances, and workshops and educational e[...]
       },
       {
         title: 'Present-Day Importance',
-        content: 'As part of the UNESCO World Heritage-listed Patan Durbar Square, Keshav Narayan Chowk is a benchmark in Nepalese heritage conservation. It represents a living tradition where history, architecture, and community intersect. The courtyard is not merely a preserved monument; it is an active civic space that continues to reflect the values and artistry of Nepalese society.'
+        content: 'As part of the UNESCO World Heritage-listed Patan Durbar Square, Keshav Narayan Chowk is a benchmark in Nepalese heritage conservation. It represents a living tradition where history[...]
       }
     ];
 
