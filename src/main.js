@@ -54,7 +54,7 @@ const sceneConfig = {
     clues: [
       {
         name: "helloCube",
-        title: "You found the Arch of the Ancient Courtyard !",
+        title: "You found the Arch of the Ancient Courtyard!",
         hint: "The ancient stone shrine of Keshav Narayan Chauk. First built in 1680, it stands where early Malla kings once ruled and where Vishnu is quietly honored.",
         position: [2.84, -0.42, -3.30],
         scale: [0.25, 0.25, 0.25],
@@ -62,7 +62,7 @@ const sceneConfig = {
       },
       {
         name: "newCube",
-        title: "You found the Pillar of a Thousand Carvings !",
+        title: "You found the Pillar of a Thousand Carvings!",
         hint: "A carved wooden pillar crafted by Malla-era artisans. Its stacked rings and detailed patterns show the signature Newa woodwork that supports Patan’s historic palace courtyards.",
         position: [-2.5, -0.42, 2.5],
         scale: [0.25, 0.25, 0.25],
@@ -70,7 +70,7 @@ const sceneConfig = {
       },
       {
         name: "anotherCube2",
-        title: "You found the Guardian Lion of the Temple Steps !",
+        title: "You found the Guardian Lion of the Temple Steps!",
         hint: "This stone lion watches over the temple stairs. Such guardians were placed at sacred entrances to symbolize strength and divine protection throughout Patan’s historic architecture.",
         position: [0, -0.42, 4.0],
         scale: [0.25, 0.25, 0.25],
@@ -596,6 +596,7 @@ async function initializeSystems() {
     // Setup global functions
     window.showInfoPopup = showInfoPopup;
     window.showWelcomePopup = showWelcomePopup;
+    window.showCongratulationsPopup = showCongratulationsPopup;
     window.advanceGameState = advanceGameState;
     window.showProgressionMessage = showProgressionMessage;
     window.isCubeClickable = isCubeClickable;
@@ -681,12 +682,26 @@ function setupEventListeners() {
     
     // Close popups with X key (works with both X and x)
     if (e.code === 'KeyX' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+      // Check for congratulations popup first (highest priority)
+      const congratsPopup = document.getElementById('congratulations-popup');
+      if (congratsPopup && congratsPopup.parentNode) {
+        congratsPopup.remove();
+        return;
+      }
+      
       // Check for info popup
       const infoPopupEl = document.getElementById('info-popup') || window.infoPopup;
       if (infoPopupEl && infoPopupEl.parentNode) {
+        const wasGameComplete = window.gameState && window.gameState.isGameComplete;
         infoPopupEl.remove();
         if (window.infoPopup === infoPopupEl) {
           window.infoPopup = null;
+        }
+        // Show congratulations popup if game was just completed
+        if (wasGameComplete && window.showCongratulationsPopup) {
+          setTimeout(() => {
+            window.showCongratulationsPopup();
+          }, 300);
         }
         return;
       }
@@ -967,8 +982,15 @@ function showInfoPopup(title, url) {
     closeBtn.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      const wasGameComplete = gameState.isGameComplete;
       if (infoPopup && infoPopup.parentNode) {
         infoPopup.remove();
+      }
+      // Show congratulations popup if game was just completed
+      if (wasGameComplete && window.showCongratulationsPopup) {
+        setTimeout(() => {
+          window.showCongratulationsPopup();
+        }, 300); // Small delay to ensure previous popup is fully closed
       }
     };
     
@@ -984,6 +1006,68 @@ function showInfoPopup(title, url) {
 
 function showProgressionMessage() {
   showInfoPopup("Not Available Yet", "Complete the previous clues first!");
+}
+
+// Function to show congratulations popup when game is complete
+function showCongratulationsPopup() {
+  try {
+    // Remove existing popup if any
+    const existingPopup = document.getElementById('congratulations-popup');
+    if (existingPopup) {
+      existingPopup.remove();
+    }
+    
+    const color = '#00ff88'; // Green color for success
+    const congratsPopup = document.createElement('div');
+    congratsPopup.id = 'congratulations-popup';
+    congratsPopup.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.95);
+      color: ${color};
+      padding: 32px 40px;
+      border-radius: 12px;
+      font-family: 'Courier New', monospace;
+      font-size: 20px;
+      z-index: 20001;
+      border: 2px solid ${color};
+      box-shadow: 0 8px 32px ${color}33;
+      text-align: center;
+      max-width: 500px;
+    `;
+    
+    // Create title
+    const titleDiv = document.createElement('div');
+    titleDiv.style.cssText = 'font-weight:bold;font-size:28px;margin-bottom:16px;color:' + color + ';';
+    titleDiv.textContent = 'Congratulations!';
+    
+    // Create message
+    const messageDiv = document.createElement('div');
+    messageDiv.style.cssText = 'font-size:18px;margin-bottom:20px;color:#fff;';
+    messageDiv.textContent = 'You have won the game!';
+    
+    // Create close button
+    const closeBtn = document.createElement('button');
+    closeBtn.id = 'close-congratulations-btn';
+    closeBtn.textContent = 'Close (X)';
+    closeBtn.style.cssText = 'margin-top:10px;padding:8px 24px;background:' + color + ';color:#222;border:none;border-radius:6px;font-size:16px;cursor:pointer;font-family:\'Courier New\',monospace;';
+    closeBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (congratsPopup && congratsPopup.parentNode) {
+        congratsPopup.remove();
+      }
+    };
+    
+    congratsPopup.appendChild(titleDiv);
+    congratsPopup.appendChild(messageDiv);
+    congratsPopup.appendChild(closeBtn);
+    document.body.appendChild(congratsPopup);
+  } catch (error) {
+    console.error('Show congratulations popup error:', error);
+  }
 }
 
 // Function to show welcome/instructions popup after 10 seconds
