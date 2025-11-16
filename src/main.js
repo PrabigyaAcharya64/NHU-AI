@@ -7,7 +7,7 @@ import { RaycastManager, HUDManager, InteractionManager, createCrosshair, showHi
 import { PhysicsSystem } from './physicsSystem.js';
 import TopUIIcons from './topUIIcons.js';
 
-// Global error handler to catch browser extension conflicts
+
 window.addEventListener('error', (event) => {
   if (event.error && event.error.message && (
     event.error.message.includes('Cannot redefine property') ||
@@ -20,7 +20,7 @@ window.addEventListener('error', (event) => {
   }
 });
 
-// Scene Configuration
+
 const sceneConfig = {
   sceneSettings: {
     initialPosition: [3.3, -0.1, 0.5],
@@ -44,48 +44,34 @@ const sceneConfig = {
     cdnUrl: "https://nhu-ai.netlify.app/KeshavNarayanChowk.splat",
     localUrl: "/KeshavNarayanChowk.splat",
     position: [0, 0, 0],
-    rotation: [Math.PI, 0, 0], // 180° rotation around X-axis to fix upside-down orientation
+    rotation: [Math.PI, 0, 0], 
     scale: [1, 1, 1]
   },
-  boundingBox: {
-    type: "cube",
-    position: [0, 0, 0],
-    rotation: [0, 0, 0],
-    scale: [20, 10, 20], // Large cube to encompass the playable area
-                  color: 0x0066ff, // Blue color for boundary cube
-              opacity: 0.3,
-              visible: true,
-              physicsRadius: 0.5,
-              pushStrength: 8.0,
-              escapeDistance: 2.0,
-              friction: 0.0,
-              restitution: 0.0
-  },
   treasureHunt: {
-    startMessage: "Find the hidden clues!",
+    startMessage: "Find the hidden treasures!",
     endMessage: "Congratulations! You've completed the game!",
     gameMode: "sequential",
     clues: [
       {
         name: "helloCube",
-        title: "Hello Cube",
-        hint: "Welcome to the treasure hunt! This is your first clue.",
+        title: "You found the Arch of the Ancient Courtyard !",
+        hint: "The ancient stone shrine of Keshav Narayan Chauk. First built in 1680, it stands where early Malla kings once ruled and where Vishnu is quietly honored.",
         position: [2.84, -0.42, -3.30],
         scale: [0.25, 0.25, 0.25],
         level: 0
       },
       {
         name: "newCube",
-        title: "Second Clue",
-        hint: "You found the second clue! Keep exploring.",
+        title: "You found the Pillar of a Thousand Carvings !",
+        hint: "A carved wooden pillar crafted by Malla-era artisans. Its stacked rings and detailed patterns show the signature Newa woodwork that supports Patan’s historic palace courtyards.",
         position: [-2.5, -0.42, 2.5],
         scale: [0.25, 0.25, 0.25],
         level: 1
       },
       {
         name: "anotherCube2",
-        title: "Final Clue",
-        hint: "Congratulations! You've found all the clues!",
+        title: "You found the Guardian Lion of the Temple Steps !",
+        hint: "This stone lion watches over the temple stairs. Such guardians were placed at sacred entrances to symbolize strength and divine protection throughout Patan’s historic architecture.",
         position: [0, -0.42, 4.0],
         scale: [0.25, 0.25, 0.25],
         level: 2
@@ -144,7 +130,7 @@ const sceneConfig = {
 // Global variables
 let scene, camera, renderer, splat;
 let mobileControls, physicsSystem, raycastManager, hudManager, interactionManager;
-let linkCubes = [], redCube, purpleCube, boundaryCube;
+let linkCubes = [], redCube, purpleCube;
 let keys = {};
 let yaw = 0, pitch = 0;
 let isGrounded = false, isCrouching = false;
@@ -154,7 +140,7 @@ let topUIIcons;
 
 
 
-// Player constants
+
 const PLAYER_HEIGHT = sceneConfig.sceneSettings.playerHeight;
 const CROUCH_HEIGHT = sceneConfig.sceneSettings.crouchHeight;
 const PLAYER_RADIUS = sceneConfig.sceneSettings.playerRadius;
@@ -171,35 +157,35 @@ let gameState = {
   currentLevel: 0,
   completedLevels: [],
   isGameComplete: false,
-  gameStarted: false,  // Track if game icon has been pressed
-  treasuresFound: 0,   // Track number of treasures found
-  totalTreasures: 3    // Total number of treasures in the game
+  gameStarted: false,  
+  treasuresFound: 0,   
+  totalTreasures: 3    
 };
 
-// Define the progression order
+
 const cubeProgression = [
   'helloCube',
   'newCube', 
   'anotherCube2'
 ];
 
-// Define hints for each cube
+
 const cubeHints = {
   'helloCube': {
-    title: "Level 1 - Clue 1",
-    hint: "Look for a green cube near the starting area. It's your first step in this treasure hunt adventure!"
+    title: "Clue",
+    hint: "Not a door, yet shaped like one. Not a shrine, yet honored like one. Seek the small arched stone."
   },
   'newCube': {
-    title: "Level 2 - Clue 2", 
-    hint: "Find the yellow cube. It's positioned in a different area of the map. Keep exploring!"
+    title: "Clue", 
+    hint: "I guard the courtyard from the shadows, etched with rings and ridges. Look for the carved pillar that never moves."
   },
   'anotherCube2': {
-    title: "Level 3 - Final Clue",
-    hint: "The purple cube holds the final secret. You're almost at the end of your journey!"
+    title: "Clue",
+    hint: "Before you rise, look for the one who never moves yet always watches. The guardian waits on the stairs."
   }
 };
 
-// Animation timing
+
 let lastTime = 0;
 let isAnimationRunning = false;
 
@@ -378,9 +364,9 @@ async function completeSplatSetup(loadingScreen, resolve) {
 function createGameObjects() {
   // Create clue cubes with distinct colors
   const clueColors = [
-    0x00ff88, // Green for first clue
-    0xff8800, // Orange for second clue  
-    0x8800ff  // Purple for final clue
+    0x00ff88, 
+    0xff8800, 
+    0x8800ff  
   ];
   
   sceneConfig.treasureHunt.clues.forEach((clue, index) => {
@@ -389,12 +375,13 @@ function createGameObjects() {
       color: clueColors[index],
       transparent: true,
       opacity: 0.8,
-      visible: false  // Start hidden until game icon is pressed
+      visible: false  
     });
     
     const cube = new THREE.Mesh(geometry, material);
     cube.position.set(clue.position[0], clue.position[1], clue.position[2]);
     cube.name = clue.name;
+    cube.visible = false;
     cube.userData = {
       title: clue.title,
       url: clue.hint,
@@ -508,12 +495,13 @@ function createGameObjects() {
     color: 0xff0000,  // Bright red color
     transparent: true,
     opacity: 0.9,     // More visible
-    visible: true     // Make it visible
+    visible: false     // Make it invisible
   });
   
   redCube = new THREE.Mesh(redGeometry, redMaterial);
   redCube.position.set(-0.516, 0.08, -0.588);
   redCube.rotation.set(0.01, 0.75, 0);
+  redCube.visible = false;
   redCube.userData = {
     isImpenetrable: true,
     physicsRadius: 0.85,
@@ -537,48 +525,8 @@ function createGameObjects() {
     visible: redMaterial.visible,
     color: redMaterial.color
   });
-
-  // Create boundary cube - MANIPULATABLE boundary
-  const boundaryConfig = sceneConfig.boundingBox;
-  const boundaryGeometry = new THREE.BoxGeometry(
-    boundaryConfig.scale[0], 
-    boundaryConfig.scale[1], 
-    boundaryConfig.scale[2]
-  );
-  const boundaryMaterial = new THREE.MeshLambertMaterial({ 
-    color: boundaryConfig.color,
-    transparent: true,
-    opacity: boundaryConfig.opacity,
-    visible: boundaryConfig.visible
-  });
-  
-              boundaryCube = new THREE.Mesh(boundaryGeometry, boundaryMaterial);
-            // Set the exact position, rotation, and scale from your values
-            boundaryCube.position.set(0.1520446116331677, 0.03227039436318551, 0.3619356272375776);
-            boundaryCube.rotation.set(3.1700000000000004, 5.57, 0);
-            boundaryCube.scale.set(0.30735686772502346, 0.2525417069709226, 0.2760043589410565);
-            boundaryCube.name = "boundaryCube";
-              boundaryCube.userData = {
-              isImpenetrable: true,
-              isBoundaryCube: true,
-              physicsRadius: boundaryConfig.physicsRadius,
-              pushStrength: boundaryConfig.pushStrength,
-              escapeDistance: boundaryConfig.escapeDistance,
-              friction: boundaryConfig.friction,
-              restitution: boundaryConfig.restitution,
-              color: boundaryConfig.color
-            };
-  
-  scene.add(boundaryCube);
-  window.boundaryCube = boundaryCube;
   
   
-  
-  console.log('All cubes created!');
-  console.log('- Green cube (helloCube): First clue (hidden until game starts)');
-  console.log('- Yellow cube (newCube): Second clue (hidden until game starts)');
-  console.log('- Purple cube (anotherCube2): Final clue (hidden until game starts)');
-  console.log('- Red cube: Fixed impenetrable obstacle (always visible)');
   
 }
 
@@ -647,11 +595,14 @@ async function initializeSystems() {
 
     // Setup global functions
     window.showInfoPopup = showInfoPopup;
+    window.showWelcomePopup = showWelcomePopup;
     window.advanceGameState = advanceGameState;
     window.showProgressionMessage = showProgressionMessage;
     window.isCubeClickable = isCubeClickable;
     window.isNewCube = isNewCube;
     window.startTreasureHunt = startTreasureHunt;
+    window.showClues = showClues;
+    window.toggleCluesVisibility = toggleCluesVisibility;
     window.showHint = showHint;
     window.cubeHints = cubeHints;
     window.gameState = gameState;
@@ -688,9 +639,11 @@ async function initializeSystems() {
 // Setup event listeners
 function setupEventListeners() {
   // Keyboard events
+  // Note: e.code works for both uppercase and lowercase (e.g., 'KeyG' works for both G and g)
   document.addEventListener('keydown', (e) => {
     keys[e.code] = true;
     
+    // Crouch toggle (works with both C and c)
     if (e.code === 'KeyC') {
       isCrouching = !isCrouching;
       window.isCrouching = isCrouching;
@@ -701,14 +654,20 @@ function setupEventListeners() {
       document.body.style.cursor = 'default';
     }
 
-    // UI shortcuts
-    if (e.code === 'KeyH' && !e.ctrlKey) { // Press H for help/hint
-      if (topUIIcons) {
-        topUIIcons.handleHelpClick();
+    // Game mode shortcuts (works with both G and g)
+    if (e.code === 'KeyG') {
+      if (window.startTreasureHunt) {
+        window.startTreasureHunt();
       }
     }
     
-    if (e.code === 'KeyQ') { // Press Q for quick hint
+    // UI shortcuts (works with both H and h)
+    if (e.code === 'KeyH' && !e.ctrlKey) {
+      // Show clues
+      if (window.showClues) {
+        window.showClues();
+      }
+      // Show hint for current level
       const gameState = window.gameState || { currentLevel: 0 };
       const cubeProgression = ['helloCube', 'newCube', 'anotherCube2'];
       const currentCubeName = cubeProgression[gameState.currentLevel];
@@ -718,7 +677,7 @@ function setupEventListeners() {
       }
     }
     
-    if (e.code === 'F2') { // Press F2 for screenshot
+    if (e.code === 'F2') { 
       if (topUIIcons) {
         topUIIcons.handleCameraClick();
       }
@@ -967,7 +926,7 @@ function showInfoPopup(title, url) {
       text-align: center;
     `;
     
-    infoPopup.innerHTML = `<div style="font-weight:bold;font-size:22px;margin-bottom:10px;">${title}</div><div>${url}</div><br><button id="close-popup-btn" style="margin-top:10px;padding:6px 18px;background:${color};color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;">Close</button>`;
+    infoPopup.innerHTML = `<div style="font-weight:bold;font-size:22px;margin-bottom:10px;">${title}</div><div>${url}</div><br><button id="close-popup-btn" style="margin-top:10px;padding:6px 18px;background:${color};color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;">Close (X)</button>`;
     document.body.appendChild(infoPopup);
     document.getElementById('close-popup-btn').onclick = () => infoPopup.remove();
   } catch (error) {
@@ -979,6 +938,71 @@ function showProgressionMessage() {
   showInfoPopup("Not Available Yet", "Complete the previous clues first!");
 }
 
+// Function to show welcome/instructions popup after 10 seconds
+function showWelcomePopup() {
+  try {
+    // Remove existing popup if any
+    const existingPopup = document.getElementById('welcome-popup');
+    if (existingPopup) {
+      existingPopup.remove();
+    }
+    
+    const color = '#429fb8';
+    const welcomePopup = document.createElement('div');
+    welcomePopup.id = 'welcome-popup';
+    welcomePopup.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.95);
+      color: ${color};
+      padding: 24px 32px;
+      border-radius: 12px;
+      font-family: 'Courier New', monospace;
+      font-size: 16px;
+      z-index: 20000;
+      border: 2px solid ${color};
+      box-shadow: 0 8px 32px ${color}33;
+      text-align: left;
+      max-width: 500px;
+      line-height: 1.6;
+    `;
+    
+    welcomePopup.innerHTML = `
+      <div style="font-weight:bold;font-size:22px;margin-bottom:16px;text-align:center;color:#00ff88;">Welcome to the Game!</div>
+      <div style="margin-bottom:12px;">
+        <span style="color: #429fb8; font-weight: bold;">G:</span> 
+        <span style="color: #fff;">Start Game Mode</span>
+      </div>
+      <div style="margin-bottom:12px;">
+        <span style="color: #429fb8; font-weight: bold;">H:</span> 
+        <span style="color: #fff;">Show Clues & Hint</span>
+      </div>
+      <div style="margin-bottom:12px;">
+        <span style="color: #429fb8; font-weight: bold;">WASD:</span> 
+        <span style="color: #fff;">Move</span>
+      </div>
+      <div style="margin-bottom:12px;">
+        <span style="color: #429fb8; font-weight: bold;">Space:</span> 
+        <span style="color: #fff;">Jump/Fly</span>
+      </div>
+      <div style="margin-bottom:12px;">
+        <span style="color: #429fb8; font-weight: bold;">Click:</span> 
+        <span style="color: #fff;">Interact with Objects</span>
+      </div>
+      <div style="margin-top:20px;text-align:center;">
+        <button id="close-welcome-popup-btn" style="padding:8px 20px;background:${color};color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;font-family:'Courier New',monospace;">Close (X)</button>
+      </div>
+    `;
+    
+    document.body.appendChild(welcomePopup);
+    document.getElementById('close-welcome-popup-btn').onclick = () => welcomePopup.remove();
+  } catch (error) {
+    console.error('Show welcome popup error:', error);
+  }
+}
+
 // Function to start the game and make clue cubes visible
 function startTreasureHunt() {
   if (!gameState.gameStarted) {
@@ -988,6 +1012,7 @@ function startTreasureHunt() {
     linkCubes.forEach(cube => {
       if (cube.userData && cube.userData.isClueCube) {
         cube.material.visible = true;
+        cube.visible = true;
         cube.material.opacity = 0.8;
       }
     });
@@ -998,14 +1023,32 @@ function startTreasureHunt() {
       hudManager.updateProgressBar();
     }
     
-    // Show notification that game has started
-    showInfoPopup("Treasure Hunt Started!", "Find the hidden clues! Start with the green cube.");
-    
-    console.log('Treasure hunt started - clue cubes are now visible and interactable');
+    showInfoPopup("Treasure Hunt Started!", "Your goal is to discover the hidden treasures.<br><br><i>Tip: Use clues around the space to guide your search.</i>");
   }
 }
 
-// Red Cube Collision Detection System
+// Function to show/hide clue cubes
+function toggleCluesVisibility() {
+  linkCubes.forEach(cube => {
+    if (cube.userData && cube.userData.isClueCube) {
+      cube.visible = !cube.visible;
+      cube.material.visible = cube.visible;
+    }
+  });
+}
+
+// Function to show clue cubes
+function showClues() {
+  linkCubes.forEach(cube => {
+    if (cube.userData && cube.userData.isClueCube) {
+      cube.visible = true;
+      cube.material.visible = true;
+      cube.material.opacity = 0.8;
+    }
+  });
+}
+
+
 function wouldCollideWithRedCube(newX, newY, newZ) {
   if (!redCube || !redCube.userData) return false;
   
@@ -1014,10 +1057,10 @@ function wouldCollideWithRedCube(newX, newY, newZ) {
   const dy = newY - redPos.y;
   const dz = newZ - redPos.z;
   
-  // Calculate distance to cube center
+  
   const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
   
-  // Check if player would be too close to cube (MUCH larger safety margin)
+  
   const cubeRadius = redCube.userData.physicsRadius || 0.85;
   const playerRadius = PLAYER_RADIUS;
   const safeDistance = cubeRadius + playerRadius + 0.2; // Much larger safety margin
@@ -1096,7 +1139,7 @@ function forcePlayerOutOfRedCube(playerPos) {
   }
 }
 
-// Start game function with better error handling
+
 async function startGame(loadingScreen) {
   try {
     console.log('Starting game with loading screen...');
@@ -1120,24 +1163,27 @@ async function startGame(loadingScreen) {
       loadingScreen.hide();
     }
     
+    // Show welcome popup after 10 seconds
+    setTimeout(() => {
+      if (window.showWelcomePopup) {
+        window.showWelcomePopup();
+      }
+    }, 10000);
+    
     console.log('Game started successfully!');
   } catch (error) {
     console.error('Failed to start game:', error);
     if (loadingScreen) {
       loadingScreen.hide();
     }
-    // Don't re-throw error to prevent crash
+    
   }
 }
 
 
 
-// Make startGame available globally
+
 window.startGame = startGame;
 
 const landingPage = new LandingPage();
 
-console.log("TRULY IMPENETRABLE red cube physics loaded - 100% solid barrier with emergency protection");
-console.log("Boundary cube collision system active - impenetrable boundary");
-console.log("Professional movement system with gravity, ground collision, and height limits");
-console.log("Game ready - click the game icon to start the treasure hunt!");
