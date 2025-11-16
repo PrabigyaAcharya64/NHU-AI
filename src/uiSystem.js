@@ -37,10 +37,14 @@ class RaycastManager {
     const rayOrigin = this.raycaster.ray.origin.clone();
     const rayDirection = this.raycaster.ray.direction.clone();
     // Get all meshes including our accurate ground plane
+    // Include invisible clue cubes so they can still be clicked
     const meshes = [];
     this.scene.traverse((child) => {
-      if (child.isMesh && child.visible) {
-        meshes.push(child);
+      if (child.isMesh) {
+        // Include visible meshes OR invisible clue cubes
+        if (child.visible || (child.userData && child.userData.isClueCube)) {
+          meshes.push(child);
+        }
       }
     });
     
@@ -725,40 +729,46 @@ function showHint(cubeName) {
     line-height: 1.4;
   `;
 
-  hintPopup.innerHTML = `
-    <div style="font-weight: bold; font-size: 18px; margin-bottom: 12px; color: #00ff88;">
-      ${hint.title}
-    </div>
-    <div style="margin-bottom: 16px;">
-      ${hint.hint}
-    </div>
-    <button id="close-hint-btn" style="
-      padding: 8px 20px;
-      background: #429fb8;
-      color: #222;
-      border: none;
-      border-radius: 6px;
-      font-size: 14px;
-      cursor: pointer;
-      font-family: 'Courier New', monospace;
-    ">Close (X)</button>
+  // Create title
+  const titleDiv = document.createElement('div');
+  titleDiv.style.cssText = 'font-weight: bold; font-size: 18px; margin-bottom: 12px; color: #00ff88;';
+  titleDiv.textContent = hint.title;
+  hintPopup.appendChild(titleDiv);
+  
+  // Create hint text
+  const hintDiv = document.createElement('div');
+  hintDiv.style.cssText = 'margin-bottom: 16px;';
+  hintDiv.textContent = hint.hint;
+  hintPopup.appendChild(hintDiv);
+  
+  // Create close button
+  const closeHintBtn = document.createElement('button');
+  closeHintBtn.id = 'close-hint-btn';
+  closeHintBtn.textContent = 'Close (X)';
+  closeHintBtn.style.cssText = `
+    padding: 8px 20px;
+    background: #429fb8;
+    color: #222;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
   `;
+  closeHintBtn.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (hintPopup && hintPopup.parentNode) {
+      hintPopup.remove();
+    }
+  };
+  hintPopup.appendChild(closeHintBtn);
 
   // Use popup manager if available, otherwise fallback to manual handling
   if (window.popupManager) {
     window.popupManager.showPopup(hintPopup, 'hint-popup');
   } else {
     document.body.appendChild(hintPopup);
-    
-    // Add close functionality
-    const closeHintBtn = document.getElementById('close-hint-btn');
-    if (closeHintBtn) {
-      closeHintBtn.addEventListener('click', () => {
-        if (hintPopup && hintPopup.parentNode) {
-          hintPopup.remove();
-        }
-      });
-    }
 
     // Auto-close after 8 seconds
     setTimeout(() => {
