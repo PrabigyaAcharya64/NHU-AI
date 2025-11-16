@@ -678,6 +678,33 @@ function setupEventListeners() {
         topUIIcons.handleCameraClick();
       }
     }
+    
+    // Close popups with X key (works with both X and x)
+    if (e.code === 'KeyX' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+      // Check for info popup
+      const infoPopupEl = document.getElementById('info-popup') || window.infoPopup;
+      if (infoPopupEl && infoPopupEl.parentNode) {
+        infoPopupEl.remove();
+        if (window.infoPopup === infoPopupEl) {
+          window.infoPopup = null;
+        }
+        return;
+      }
+      
+      // Check for welcome popup
+      const welcomePopup = document.getElementById('welcome-popup');
+      if (welcomePopup && welcomePopup.parentNode) {
+        welcomePopup.remove();
+        return;
+      }
+      
+      // Check for hint popup
+      const hintPopup = document.getElementById('hint-popup');
+      if (hintPopup && hintPopup.parentNode) {
+        hintPopup.remove();
+        return;
+      }
+    }
 
 
 
@@ -905,6 +932,7 @@ function showInfoPopup(title, url) {
     
     const color = '#429fb8';
     infoPopup = document.createElement('div');
+    infoPopup.id = 'info-popup';
     infoPopup.style.cssText = `
       position: fixed;
       top: 50%;
@@ -922,18 +950,33 @@ function showInfoPopup(title, url) {
       text-align: center;
     `;
     
-    infoPopup.innerHTML = `<div style="font-weight:bold;font-size:22px;margin-bottom:10px;">${title}</div><div>${url}</div><br><button id="close-popup-btn" style="margin-top:10px;padding:6px 18px;background:${color};color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;">Close (X)</button>`;
-    document.body.appendChild(infoPopup);
+    // Create content
+    const titleDiv = document.createElement('div');
+    titleDiv.style.cssText = 'font-weight:bold;font-size:22px;margin-bottom:10px;';
+    titleDiv.textContent = title;
     
-    // Attach close button handler
-    const closeBtn = document.getElementById('close-popup-btn');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => {
-        if (infoPopup && infoPopup.parentNode) {
-          infoPopup.remove();
-        }
-      });
-    }
+    const contentDiv = document.createElement('div');
+    contentDiv.innerHTML = url;
+    
+    const br = document.createElement('br');
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.id = 'close-popup-btn';
+    closeBtn.textContent = 'Close (X)';
+    closeBtn.style.cssText = 'margin-top:10px;padding:6px 18px;background:' + color + ';color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;';
+    closeBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (infoPopup && infoPopup.parentNode) {
+        infoPopup.remove();
+      }
+    };
+    
+    infoPopup.appendChild(titleDiv);
+    infoPopup.appendChild(contentDiv);
+    infoPopup.appendChild(br);
+    infoPopup.appendChild(closeBtn);
+    document.body.appendChild(infoPopup);
   } catch (error) {
     console.error('Show info popup error:', error);
   }
@@ -974,44 +1017,47 @@ function showWelcomePopup() {
       line-height: 1.6;
     `;
     
-    welcomePopup.innerHTML = `
-      <div style="font-weight:bold;font-size:22px;margin-bottom:16px;text-align:center;color:#00ff88;">Welcome to the Game!</div>
-      <div style="margin-bottom:12px;">
-        <span style="color: #429fb8; font-weight: bold;">G:</span> 
-        <span style="color: #fff;">Start Game Mode</span>
-      </div>
-      <div style="margin-bottom:12px;">
-        <span style="color: #429fb8; font-weight: bold;">H:</span> 
-        <span style="color: #fff;">Show Hint</span>
-      </div>
-      <div style="margin-bottom:12px;">
-        <span style="color: #429fb8; font-weight: bold;">WASD:</span> 
-        <span style="color: #fff;">Move</span>
-      </div>
-      <div style="margin-bottom:12px;">
-        <span style="color: #429fb8; font-weight: bold;">Space:</span> 
-        <span style="color: #fff;">Jump/Fly</span>
-      </div>
-      <div style="margin-bottom:12px;">
-        <span style="color: #429fb8; font-weight: bold;">Click:</span> 
-        <span style="color: #fff;">Interact with Objects</span>
-      </div>
-      <div style="margin-top:20px;text-align:center;">
-        <button id="close-welcome-popup-btn" style="padding:8px 20px;background:${color};color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;font-family:'Courier New',monospace;">Close (X)</button>
-      </div>
-    `;
+    // Create title
+    const titleDiv = document.createElement('div');
+    titleDiv.style.cssText = 'font-weight:bold;font-size:22px;margin-bottom:16px;text-align:center;color:#00ff88;';
+    titleDiv.textContent = 'Welcome to the Game!';
+    welcomePopup.appendChild(titleDiv);
     
+    // Create instruction items
+    const instructions = [
+      { key: 'G:', desc: 'Start Game Mode' },
+      { key: 'H:', desc: 'Show Hint' },
+      { key: 'WASD:', desc: 'Move' },
+      { key: 'Space:', desc: 'Jump/Fly' },
+      { key: 'Click:', desc: 'Interact with Objects' }
+    ];
+    
+    instructions.forEach(inst => {
+      const div = document.createElement('div');
+      div.style.cssText = 'margin-bottom:12px;';
+      div.innerHTML = `<span style="color: #429fb8; font-weight: bold;">${inst.key}</span> <span style="color: #fff;">${inst.desc}</span>`;
+      welcomePopup.appendChild(div);
+    });
+    
+    // Create close button
+    const buttonContainer = document.createElement('div');
+    buttonContainer.style.cssText = 'margin-top:20px;text-align:center;';
+    
+    const closeWelcomeBtn = document.createElement('button');
+    closeWelcomeBtn.id = 'close-welcome-popup-btn';
+    closeWelcomeBtn.textContent = 'Close (X)';
+    closeWelcomeBtn.style.cssText = `padding:8px 20px;background:${color};color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;font-family:'Courier New',monospace;`;
+    closeWelcomeBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (welcomePopup && welcomePopup.parentNode) {
+        welcomePopup.remove();
+      }
+    };
+    
+    buttonContainer.appendChild(closeWelcomeBtn);
+    welcomePopup.appendChild(buttonContainer);
     document.body.appendChild(welcomePopup);
-    
-    // Attach close button handler
-    const closeWelcomeBtn = document.getElementById('close-welcome-popup-btn');
-    if (closeWelcomeBtn) {
-      closeWelcomeBtn.addEventListener('click', () => {
-        if (welcomePopup && welcomePopup.parentNode) {
-          welcomePopup.remove();
-        }
-      });
-    }
   } catch (error) {
     console.error('Show welcome popup error:', error);
   }
@@ -1109,7 +1155,7 @@ function applyCollisionPushback(playerPos) {
   }
 }
 
-// EMERGENCY: Force player out if somehow inside red cube
+
 function forcePlayerOutOfRedCube(playerPos) {
   if (!redCube || !redCube.userData) return;
   
