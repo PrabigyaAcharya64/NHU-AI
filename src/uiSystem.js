@@ -260,26 +260,24 @@ class HUDManager {
       const dz = playerPosition.z - objPos.z;
       const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
 
-      let threshold = 1.0; // default for helloCube
-      if (window.isNewCube && window.isNewCube(hitInfo.object)) {
-        threshold = 3.0; // clickable for newCube within 3 meters (reduced from 10)
-      } else if (hitInfo.object.name === 'anotherCube2') {
-        threshold = 3.0; // clickable for purple cube within 3 meters
+      // Set threshold based on cube type - all clue cubes use 3.0 meters
+      let threshold = 3.0; // Default threshold for all clue cubes
+      if (hitInfo.object.name === 'helloCube') {
+        threshold = 1.0; // Green cube uses 1.0 meter
       }
       
       // Check if cube is clickable based on game progression
-      const isClickable = window.isCubeClickable && window.isCubeClickable(hitInfo.object);
+      // Only show hover effect if game has started
+      const gameState = window.gameState || { gameStarted: false };
+      const isClickable = gameState.gameStarted && window.isCubeClickable && window.isCubeClickable(hitInfo.object);
       
-      // Special case: Show circle crosshair for the first cube (helloCube) even before game starts
-      const isFirstCube = hitInfo.object.name === 'helloCube' && hitInfo.object.userData.level === 0;
-      
-      if (dist < threshold && (isClickable || isFirstCube)) {
+      // Show hover effect only if game has started and cube is clickable
+      if (dist < threshold && isClickable) {
         color = '#ffaa00'; // Yellow for interactive
         intensity = '0.8';
         isInteractive = true;
       } else if (dist < threshold && !isClickable) {
-        // Keep normal crosshair color when cube is not clickable
-        // Don't show red crosshair, just use default color
+        // Keep normal crosshair color when cube is not clickable or game hasn't started
         color = '#429fb8'; // Default blue color
         intensity = '0.6';
         isInteractive = false;
@@ -526,22 +524,25 @@ class InteractionManager {
       const dz = playerPosition.z - objPos.z;
       const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
 
-      let threshold = 1.0; // default for helloCube
-      if (window.isNewCube && window.isNewCube(hitInfo.object)) {
-        threshold = 3.0; // clickable for newCube within 3 meters (reduced from 10)
-      } else if (hitInfo.object.name === 'anotherCube2') {
-        threshold = 3.0; // clickable for purple cube within 3 meters
+      // Set threshold based on cube type - all clue cubes use 3.0 meters
+      let threshold = 3.0; // Default threshold for all clue cubes
+      if (hitInfo.object.name === 'helloCube') {
+        threshold = 1.0; // Green cube uses 1.0 meter
       }
       
       // Check if cube is clickable and within distance
-      if (dist < threshold && userData.title && userData.url) {
+      // Only allow clicking if game has started
+      const gameState = window.gameState || { gameStarted: false };
+      if (dist < threshold && userData.title && userData.url && gameState.gameStarted) {
         const isClickable = window.isCubeClickable && window.isCubeClickable(hitInfo.object);
         
         if (isClickable) {
-          // Show popup and advance game state
+          // Show popup
           if (window.showInfoPopup) {
             window.showInfoPopup(userData.title, userData.url);
           }
+          
+          // Advance game state
           if (window.advanceGameState) {
             window.advanceGameState();
           }
