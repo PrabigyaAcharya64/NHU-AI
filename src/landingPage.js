@@ -655,23 +655,23 @@ class LandingPage {
     const contentSections = [
       {
         title: 'Historical Background',
-        content: 'The site originally housed Chaukot Durbar, a four-cornered fortress from the Malla period. Before that, it was home to Ratnakar Gumba, a Buddhist monastery. In the 17th century, King[...]
+        content: 'The site originally housed Chaukot Durbar, a four-cornered fortress from the Malla period. Before that, it was home to Ratnakar Gumba, a Buddhist monastery. In the 17th century, King Siddhinarasimha Malla established a residence here that later became Keshav Narayan Temple.'
       },
       {
         title: 'Architectural Features',
-        content: 'Designed in the traditional Nepali chowk style, the courtyard is enclosed by four wings and features ornately carved timber columns and arcades, traditional brickwork and gilded reli[...]
+        content: 'Designed in the traditional Nepali chowk style, the courtyard is enclosed by four wings and features ornately carved timber columns and arcades, traditional brickwork and gilded reliefs, intricately decorated windows and doorways, and a peaceful central courtyard space.'
       },
       {
         title: 'The Patan Museum',
-        content: 'Following damage from the 1934 earthquake and subsequent neglect, Keshav Narayan Chowk underwent major restoration beginning in 1982. This joint initiative by the Nepalese and Austri[...]
+        content: 'Following damage from the 1934 earthquake and subsequent neglect, Keshav Narayan Chowk underwent major restoration beginning in 1982. This joint initiative by the Nepalese and Austrian governments transformed the palace into the acclaimed Patan Museum, showcasing metalwork, woodcarvings, and religious art.'
       },
       {
         title: 'Cultural and Civic Role',
-        content: 'The courtyard remains a functional cultural space that continues to host religious rituals and seasonal festivals, public gatherings and performances, and workshops and educational e[...]
+        content: 'The courtyard remains a functional cultural space that continues to host religious rituals and seasonal festivals, public gatherings and performances, and workshops and educational events. It serves as a bridge between Nepal\'s royal past and its vibrant present.'
       },
       {
         title: 'Present-Day Importance',
-        content: 'As part of the UNESCO World Heritage-listed Patan Durbar Square, Keshav Narayan Chowk is a benchmark in Nepalese heritage conservation. It represents a living tradition where history[...]
+        content: 'As part of the UNESCO World Heritage-listed Patan Durbar Square, Keshav Narayan Chowk is a benchmark in Nepalese heritage conservation. It represents a living tradition where history, art, and community converge in one of the Kathmandu Valley\'s most treasured spaces.'
       }
     ];
 
