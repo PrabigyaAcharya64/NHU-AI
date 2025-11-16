@@ -1,107 +1,22 @@
 // Landing Page Module for Treasure Hunt
 import LoadingScreen from './loadingScreen.js';
 
-// --- ASSET LOADING UTILITY ---
-function loadAssetWithFallback(primaryPath, fallbackPath = null, type = 'image') {
-  return new Promise((resolve, reject) => {
-    const element = type === 'video' ? document.createElement('video') : document.createElement('img');
-    
-    const tryLoad = (path) => {
-      if (type === 'video') {
-        element.src = path;
-        element.load();
-      } else {
-        element.src = path;
-      }
-    };
-    
-    element.onload = () => resolve(element);
-    element.onerror = () => {
-      if (fallbackPath && element.src !== fallbackPath) {
-        console.log(`Primary asset failed, trying fallback: ${fallbackPath}`);
-        tryLoad(fallbackPath);
-      } else {
-        reject(new Error(`Failed to load asset: ${element.src}`));
-      }
-    };
-    
-    tryLoad(primaryPath);
+// --- SIMPLE VIDEO LOADER ---
+function loadVideo(videoElement) {
+  const source = document.createElement('source');
+  source.src = '/Adobe Express - IQWPE3043.mp4';
+  source.type = 'video/mp4';
+  videoElement.appendChild(source);
+  
+  videoElement.addEventListener('loadeddata', () => {
+    console.log('Video loaded successfully');
   });
-}
-
-// --- VIDEO LOADING UTILITY FOR VERCEL ---
-function createVideoLoader() {
-  const videoPaths = [
-    '/Adobe Express - IQWPE3043 (1).mp4',
-    './Adobe Express - IQWPE3043 (1).mp4',
-    '/Adobe_Express_IQWPE3043.mp4',
-    './Adobe_Express_IQWPE3043.mp4',
-    '/background-video.mp4',
-    './background-video.mp4',
-    '/Untitled video - Made with Clipchamp (1).mp4',
-    './Untitled video - Made with Clipchamp (1).mp4',
-    '/background.mp4',
-    './background.mp4',
-    // Add more fallback paths for Vercel
-    '/assets/Adobe Express - IQWPE3043 (1).mp4',
-    './assets/Adobe Express - IQWPE3043 (1).mp4'
-  ];
-
-  return {
-    async loadVideo(videoElement, onSuccess, onError) {
-      let currentIndex = 0;
-      
-      const tryNextVideo = () => {
-        if (currentIndex >= videoPaths.length) {
-          console.log('All video paths failed, using gradient background');
-          onError && onError(new Error('All video paths failed'));
-          return;
-        }
-
-        const videoPath = videoPaths[currentIndex];
-        console.log(`Trying to load video: ${videoPath}`);
-
-        // Clear existing sources
-        videoElement.innerHTML = '';
-        
-        const source = document.createElement('source');
-        source.src = videoPath;
-        source.type = 'video/mp4';
-        
-        // Add error handling for source
-        source.onerror = () => {
-          console.error(`Source error for: ${videoPath}`);
-          currentIndex++;
-          tryNextVideo();
-        };
-        
-        videoElement.appendChild(source);
-        videoElement.load();
-        
-        // Set up success handler
-        const onLoadedData = () => {
-          console.log(`Video loaded successfully: ${videoPath}`);
-          videoElement.removeEventListener('loadeddata', onLoadedData);
-          videoElement.removeEventListener('error', onVideoError);
-          onSuccess && onSuccess(videoElement);
-        };
-        
-        // Set up error handler
-        const onVideoError = (e) => {
-          console.error(`Video error for ${videoPath}:`, e);
-          videoElement.removeEventListener('loadeddata', onLoadedData);
-          videoElement.removeEventListener('error', onVideoError);
-          currentIndex++;
-          tryNextVideo();
-        };
-        
-        videoElement.addEventListener('loadeddata', onLoadedData);
-        videoElement.addEventListener('error', onVideoError);
-      };
-      
-      tryNextVideo();
-    }
-  };
+  
+  videoElement.addEventListener('error', () => {
+    console.log('Video failed to load, using gradient background');
+  });
+  
+  videoElement.load();
 }
 
 class LandingPage {
@@ -257,7 +172,7 @@ class LandingPage {
       cursor: default;
     `;
 
-    // Create hero section with GIF background
+    // Create hero section with video background
     const heroSection = this.createHeroSection();
     
     // Create Keshav Narayan Chowk section
@@ -286,11 +201,10 @@ class LandingPage {
       justify-content: center;
       padding: 80px 40px 40px 40px;
       overflow: hidden;
-      /* Ensure video background works on all devices */
       -webkit-overflow-scrolling: touch;
     `;
 
-    // Add fallback gradient background immediately (lower z-index)
+    // Add fallback gradient background
     const fallbackBackground = document.createElement('div');
     fallbackBackground.style.cssText = `
       position: absolute;
@@ -303,7 +217,7 @@ class LandingPage {
       pointer-events: none;
     `;
     
-    // Background Video with fallback to gradient
+    // Background Video
     const backgroundVideo = document.createElement('video');
     backgroundVideo.style.cssText = `
       position: absolute;
@@ -315,96 +229,57 @@ class LandingPage {
       opacity: 0.95;
       z-index: 1;
       pointer-events: none;
-      /* Mobile optimizations */
       -webkit-transform: translateZ(0);
       transform: translateZ(0);
       -webkit-backface-visibility: hidden;
       backface-visibility: hidden;
     `;
     
-    // Set video attributes for optimal performance
     backgroundVideo.autoplay = true;
     backgroundVideo.muted = true;
     backgroundVideo.loop = true;
     backgroundVideo.playsInline = true;
     backgroundVideo.preload = 'metadata';
-    backgroundVideo.crossOrigin = 'anonymous';
     
-    // Use the new video loader utility
-    const videoLoader = createVideoLoader();
+    // Load the video
+    loadVideo(backgroundVideo);
     
-    videoLoader.loadVideo(
-      backgroundVideo,
-      // Success callback
-      (videoElement) => {
-        console.log('Video loaded successfully');
-        
-        // Check if device is mobile
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        
-        const playVideo = () => {
-          videoElement.play()
-            .then(() => {
-              console.log('Video playing successfully');
-              // Fade in the video
-              videoElement.style.transition = 'opacity 1s ease-in-out';
-              videoElement.style.opacity = '0.95';
-            })
-            .catch(error => {
-              console.log('Video play failed:', error);
-            });
-        };
+    // Check if device is mobile
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    const playVideo = () => {
+      backgroundVideo.play()
+        .then(() => {
+          console.log('Video playing successfully');
+          backgroundVideo.style.transition = 'opacity 1s ease-in-out';
+          backgroundVideo.style.opacity = '0.95';
+        })
+        .catch(error => {
+          console.log('Video play failed:', error);
+        });
+    };
 
-        if (isMobile) {
-          // On mobile, wait for user interaction
-          const playVideoOnInteraction = () => {
-            playVideo();
-            document.removeEventListener('touchstart', playVideoOnInteraction);
-            document.removeEventListener('click', playVideoOnInteraction);
-          };
-          
-          document.addEventListener('touchstart', playVideoOnInteraction, { passive: true });
-          document.addEventListener('click', playVideoOnInteraction, { passive: true });
-        } else {
-          // On desktop, try autoplay immediately
-          playVideo();
-        }
-      },
-      // Error callback
-      (error) => {
-        console.log('All video loading attempts failed, using gradient background');
-        // The gradient background will remain visible
-      }
-    );
+    if (isMobile) {
+      const playVideoOnInteraction = () => {
+        playVideo();
+        document.removeEventListener('touchstart', playVideoOnInteraction);
+        document.removeEventListener('click', playVideoOnInteraction);
+      };
+      
+      document.addEventListener('touchstart', playVideoOnInteraction, { passive: true });
+      document.addEventListener('click', playVideoOnInteraction, { passive: true });
+    } else {
+      playVideo();
+    }
 
     // Top logo
     const topLogo = document.createElement('img');
     topLogo.src = './Asset 9@4x-8.png';
     topLogo.alt = 'Logo';
     topLogo.className = 'top-logo';
-    
-    // Handle logo loading error
     topLogo.onerror = () => {
-      console.log('Logo failed to load, trying alternative paths');
-      const logoPaths = ['./logo.png', './Asset_9@4x-8.png', './logo.svg'];
-      
-      for (let path of logoPaths) {
-        const testImg = new Image();
-        testImg.onload = () => {
-          topLogo.src = path;
-          return;
-        };
-        testImg.src = path;
-      }
-      
-      // If all fail, hide the logo
-      setTimeout(() => {
-        if (topLogo.naturalWidth === 0) {
-          topLogo.style.display = 'none';
-        }
-      }, 2000);
+      topLogo.style.display = 'none';
     };
-    
     topLogo.style.cssText = `
       width: 120px;
       height: auto;
@@ -502,7 +377,6 @@ class LandingPage {
 
     playButton.addEventListener('click', async () => {
       this.hide();
-      // Show loading screen immediately and start the game
       const loadingScreen = new LoadingScreen();
       loadingScreen.show();
       loadingScreen.updateProgress(0);
@@ -524,7 +398,6 @@ class LandingPage {
     mainContent.appendChild(playButton);
     contentOverlay.appendChild(mainContent);
     
-    // Add fallback background first, then video, then content
     heroSection.appendChild(fallbackBackground);
     heroSection.appendChild(backgroundVideo);
     heroSection.appendChild(topLogo);
@@ -546,7 +419,6 @@ class LandingPage {
       margin: 0 auto;
     `;
 
-    // Main heading
     const mainHeading = document.createElement('h2');
     mainHeading.textContent = 'KESHAV NARAYAN CHOWK';
     mainHeading.style.cssText = `
@@ -579,27 +451,7 @@ class LandingPage {
     const image1 = document.createElement('img');
     image1.src = './pic1.jpg';
     image1.alt = 'Keshav Narayan Chowk';
-    
-    // Handle image1 loading error
-    image1.onerror = () => {
-      console.log('Image1 failed to load, trying alternatives');
-      const imgPaths = ['./pic1.jpeg', './pic1.png', './image1.jpg'];
-      
-      for (let path of imgPaths) {
-        const testImg = new Image();
-        testImg.onload = () => {
-          image1.src = path;
-          return;
-        };
-        testImg.src = path;
-      }
-      
-      setTimeout(() => {
-        if (image1.naturalWidth === 0) {
-          image1.style.display = 'none';
-        }
-      }, 2000);
-    };
+    image1.onerror = () => { image1.style.display = 'none'; };
     image1.style.cssText = `
       width: 100%;
       height: 300px;
@@ -611,27 +463,7 @@ class LandingPage {
     const image2 = document.createElement('img');
     image2.src = './pic2.webp';
     image2.alt = 'Patan Durbar Square';
-    
-    // Handle image2 loading error
-    image2.onerror = () => {
-      console.log('Image2 failed to load, trying alternatives');
-      const imgPaths = ['./pic2.jpg', './pic2.png', './image2.jpg'];
-      
-      for (let path of imgPaths) {
-        const testImg = new Image();
-        testImg.onload = () => {
-          image2.src = path;
-          return;
-        };
-        testImg.src = path;
-      }
-      
-      setTimeout(() => {
-        if (image2.naturalWidth === 0) {
-          image2.style.display = 'none';
-        }
-      }, 2000);
-    };
+    image2.onerror = () => { image2.style.display = 'none'; };
     image2.style.cssText = `
       width: 100%;
       height: 300px;
@@ -655,23 +487,23 @@ class LandingPage {
     const contentSections = [
       {
         title: 'Historical Background',
-        content: 'The site originally housed Chaukot Durbar, a four-cornered fortress from the Malla period. Before that, it was home to Ratnakar Gumba, a Buddhist monastery. In the 17th century, King Siddhinarasimha Malla established a residence here that later became Keshav Narayan Temple.'
+        content: 'The site originally housed Chaukot Durbar, a four-cornered fortress from the Malla period. Before that, it was home to Ratnakar Gumba, a Buddhist monastery. In the 17th century, King Siddhi Narasimha Malla built this courtyard as a royal residential palace.'
       },
       {
         title: 'Architectural Features',
-        content: 'Designed in the traditional Nepali chowk style, the courtyard is enclosed by four wings and features ornately carved timber columns and arcades, traditional brickwork and gilded reliefs, intricately decorated windows and doorways, and a peaceful central courtyard space.'
+        content: 'Designed in the traditional Nepali chowk style, the courtyard is enclosed by four wings and features ornately carved timber columns and arcades, traditional brickwork and gilded reliefs, and intricate woodwork showcasing Newari craftsmanship.'
       },
       {
         title: 'The Patan Museum',
-        content: 'Following damage from the 1934 earthquake and subsequent neglect, Keshav Narayan Chowk underwent major restoration beginning in 1982. This joint initiative by the Nepalese and Austrian governments transformed the palace into the acclaimed Patan Museum, showcasing metalwork, woodcarvings, and religious art.'
+        content: 'Following damage from the 1934 earthquake and subsequent neglect, Keshav Narayan Chowk underwent major restoration beginning in 1982. This joint initiative by the Nepalese and Austrian governments transformed the courtyard into the renowned Patan Museum.'
       },
       {
         title: 'Cultural and Civic Role',
-        content: 'The courtyard remains a functional cultural space that continues to host religious rituals and seasonal festivals, public gatherings and performances, and workshops and educational events. It serves as a bridge between Nepal\'s royal past and its vibrant present.'
+        content: 'The courtyard remains a functional cultural space that continues to host religious rituals and seasonal festivals, public gatherings and performances, and workshops and educational events that connect past and present.'
       },
       {
         title: 'Present-Day Importance',
-        content: 'As part of the UNESCO World Heritage-listed Patan Durbar Square, Keshav Narayan Chowk is a benchmark in Nepalese heritage conservation. It represents a living tradition where history, art, and community converge in one of the Kathmandu Valley\'s most treasured spaces.'
+        content: 'As part of the UNESCO World Heritage-listed Patan Durbar Square, Keshav Narayan Chowk is a benchmark in Nepalese heritage conservation. It represents a living tradition where history, art, and community converge.'
       }
     ];
 
@@ -755,7 +587,6 @@ class LandingPage {
 
     ctaButton.addEventListener('click', () => {
       this.hide();
-      // Show loading screen immediately and start the game
       const loadingScreen = new LoadingScreen();
       loadingScreen.show();
       loadingScreen.updateProgress(0);
@@ -768,7 +599,6 @@ class LandingPage {
     ctaSection.appendChild(ctaTitle);
     ctaSection.appendChild(ctaButton);
 
-    // Assemble keshav section
     container.appendChild(mainHeading);
     container.appendChild(subHeading);
     container.appendChild(imagesSection);
@@ -844,5 +674,4 @@ class LandingPage {
   }
 }
 
-// Export for use in main.js
 export default LandingPage;
