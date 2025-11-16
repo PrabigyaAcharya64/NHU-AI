@@ -663,11 +663,7 @@ function setupEventListeners() {
     
     // UI shortcuts (works with both H and h)
     if (e.code === 'KeyH' && !e.ctrlKey) {
-      // Show clues
-      if (window.showClues) {
-        window.showClues();
-      }
-      // Show hint for current level
+      // Only show hint popup, never reveal the cubes
       const gameState = window.gameState || { currentLevel: 0 };
       const cubeProgression = ['helloCube', 'newCube', 'anotherCube2'];
       const currentCubeName = cubeProgression[gameState.currentLevel];
@@ -928,7 +924,16 @@ function showInfoPopup(title, url) {
     
     infoPopup.innerHTML = `<div style="font-weight:bold;font-size:22px;margin-bottom:10px;">${title}</div><div>${url}</div><br><button id="close-popup-btn" style="margin-top:10px;padding:6px 18px;background:${color};color:#222;border:none;border-radius:6px;font-size:15px;cursor:pointer;">Close (X)</button>`;
     document.body.appendChild(infoPopup);
-    document.getElementById('close-popup-btn').onclick = () => infoPopup.remove();
+    
+    // Attach close button handler
+    const closeBtn = document.getElementById('close-popup-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        if (infoPopup && infoPopup.parentNode) {
+          infoPopup.remove();
+        }
+      });
+    }
   } catch (error) {
     console.error('Show info popup error:', error);
   }
@@ -977,7 +982,7 @@ function showWelcomePopup() {
       </div>
       <div style="margin-bottom:12px;">
         <span style="color: #429fb8; font-weight: bold;">H:</span> 
-        <span style="color: #fff;">Show Clues & Hint</span>
+        <span style="color: #fff;">Show Hint</span>
       </div>
       <div style="margin-bottom:12px;">
         <span style="color: #429fb8; font-weight: bold;">WASD:</span> 
@@ -997,25 +1002,27 @@ function showWelcomePopup() {
     `;
     
     document.body.appendChild(welcomePopup);
-    document.getElementById('close-welcome-popup-btn').onclick = () => welcomePopup.remove();
+    
+    // Attach close button handler
+    const closeWelcomeBtn = document.getElementById('close-welcome-popup-btn');
+    if (closeWelcomeBtn) {
+      closeWelcomeBtn.addEventListener('click', () => {
+        if (welcomePopup && welcomePopup.parentNode) {
+          welcomePopup.remove();
+        }
+      });
+    }
   } catch (error) {
     console.error('Show welcome popup error:', error);
   }
 }
 
-// Function to start the game and make clue cubes visible
+// Function to start the game
 function startTreasureHunt() {
   if (!gameState.gameStarted) {
     gameState.gameStarted = true;
     
-    // Make all clue cubes visible
-    linkCubes.forEach(cube => {
-      if (cube.userData && cube.userData.isClueCube) {
-        cube.material.visible = true;
-        cube.visible = true;
-        cube.material.opacity = 0.8;
-      }
-    });
+    // Don't make cubes visible here - they should only be visible when H is pressed
     
     // Show progress bar
     if (hudManager && hudManager.showProgressBar) {
@@ -1162,13 +1169,6 @@ async function startGame(loadingScreen) {
     if (loadingScreen) {
       loadingScreen.hide();
     }
-    
-    // Show welcome popup after 10 seconds
-    setTimeout(() => {
-      if (window.showWelcomePopup) {
-        window.showWelcomePopup();
-      }
-    }, 10000);
     
     console.log('Game started successfully!');
   } catch (error) {
