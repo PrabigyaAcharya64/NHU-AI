@@ -160,6 +160,14 @@ class HUDManager {
       </div>
       <div style="color: #fff; line-height: 1.1;">
         <div style="margin-bottom: 2px;">
+          <span style="color: #429fb8; font-weight: bold;">G:</span> 
+          <span style="color: #fff;">Start Game</span>
+        </div>
+        <div style="margin-bottom: 2px;">
+          <span style="color: #429fb8; font-weight: bold;">H:</span> 
+          <span style="color: #fff;">Show Clues & Hint</span>
+        </div>
+        <div style="margin-bottom: 2px;">
           <span style="color: #429fb8; font-weight: bold;">WASD:</span> 
           <span style="color: #fff;">Move</span>
         </div>
@@ -733,7 +741,7 @@ function showHint(cubeName) {
       font-size: 14px;
       cursor: pointer;
       font-family: 'Courier New', monospace;
-    ">Close</button>
+    ">Close (X)</button>
   `;
 
   // Use popup manager if available, otherwise fallback to manual handling
