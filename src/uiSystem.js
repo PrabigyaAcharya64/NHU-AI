@@ -165,7 +165,7 @@ class HUDManager {
         </div>
         <div style="margin-bottom: 2px;">
           <span style="color: #429fb8; font-weight: bold;">H:</span> 
-          <span style="color: #fff;">Show Clues & Hint</span>
+          <span style="color: #fff;">Show Hint</span>
         </div>
         <div style="margin-bottom: 2px;">
           <span style="color: #429fb8; font-weight: bold;">WASD:</span> 
@@ -751,13 +751,18 @@ function showHint(cubeName) {
     document.body.appendChild(hintPopup);
     
     // Add close functionality
-    document.getElementById('close-hint-btn').onclick = () => {
-      hintPopup.remove();
-    };
+    const closeHintBtn = document.getElementById('close-hint-btn');
+    if (closeHintBtn) {
+      closeHintBtn.addEventListener('click', () => {
+        if (hintPopup && hintPopup.parentNode) {
+          hintPopup.remove();
+        }
+      });
+    }
 
     // Auto-close after 8 seconds
     setTimeout(() => {
-      if (hintPopup.parentNode) {
+      if (hintPopup && hintPopup.parentNode) {
         hintPopup.remove();
       }
     }, 8000);
